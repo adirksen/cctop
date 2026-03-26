@@ -1,0 +1,42 @@
+{
+  "name": "cctop",
+  "version": "0.1.0",
+  "description": "Terminal dashboard for monitoring Claude Code sessions, token usage, and agent activity",
+  "type": "module",
+  "bin": {
+    "cctop": "./dist/cctop.js"
+  },
+  "scripts": {
+    "dev": "tsx bin/cctop.ts",
+    "build": "esbuild bin/cctop.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cctop.js --banner:js=\"#!/usr/bin/env node\" --external:neo-blessed --external:blessed --external:blessed-contrib --external:term.js --external:pty.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "terminal",
+    "dashboard",
+    "tui",
+    "monitor"
+  ],
+  "author": "Anthony Dirksen",
+  "license": "MIT",
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
+    "chokidar": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.27",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.21.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}
