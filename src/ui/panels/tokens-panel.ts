@@ -3,7 +3,7 @@ import type { ActiveSession } from "../../types.js";
 import type { TodayStats } from "../../aggregators/today-aggregator.js";
 import { formatTokens, formatCost } from "../../util/format.js";
 import { estimateCost } from "../../aggregators/token-aggregator.js";
-import { clearLog } from "./log-utils.js";
+import { clearLog, logCapacity, scrollLogToTop } from "./log-utils.js";
 
 let lastFingerprint = "";
 
@@ -42,7 +42,10 @@ export function updateTokensPanel(
   );
   log.log("");
 
-  const recent = sessions.slice(0, 4);
+  // Five summary lines plus a spacer are already written; each session takes
+  // two more. Show only what fits so the "Today" total is never pushed out.
+  const roomForSessions = Math.floor((logCapacity(log) - 6) / 2);
+  const recent = sessions.slice(0, Math.max(0, Math.min(4, roomForSessions)));
   for (const s of recent) {
     const t = s.totalTokens;
     const sessionIn =
@@ -56,4 +59,6 @@ export function updateTokensPanel(
       `    {cyan-fg}${formatTokens(sessionIn)}{/cyan-fg} in  {yellow-fg}${formatTokens(t.output_tokens)}{/yellow-fg} out`
     );
   }
+
+  scrollLogToTop(log);
 }

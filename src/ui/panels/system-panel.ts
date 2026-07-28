@@ -1,7 +1,7 @@
 import type contrib from "blessed-contrib";
 import type { SystemStats } from "../../types.js";
 import { formatBytes } from "../../util/format.js";
-import { clearLog } from "./log-utils.js";
+import { clearLog, scrollLogToTop } from "./log-utils.js";
 
 let lastFingerprint = "";
 
@@ -45,4 +45,6 @@ export function updateSystemPanel(
       `  {green-fg}●{/green-fg} {yellow-fg}Claude PIDs:{/yellow-fg} {bold}${stats.claudeProcesses.length}{/bold}`
     );
   }
+
+  scrollLogToTop(log);
 }

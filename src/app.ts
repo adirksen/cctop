@@ -328,12 +328,16 @@ function updateStatusBar(sessions: ActiveSession[], model?: string): void {
     sessions.map((s) => estimateCost(s.totalTokens, s.model))
   );
 
+  // Labels are plain text, not emoji, on purpose. blessed computes emoji as one
+  // cell where the terminal draws two, so every redraw landed a cell to the left
+  // of the last one and the status bar accumulated garbage — "$1955.41" became
+  // "81775.41" within seconds. Single-width glyphs only here.
   const statusText = [
-    `🤖 {yellow-fg}${model?.replace("claude-", "") ?? "?"}{/yellow-fg}`,
-    `⚡ {green-fg}${aliveCount} alive{/green-fg}`,
-    `🪙 {cyan-fg}${formatTokens(totalTokens)}{/cyan-fg}`,
-    `💰 {yellow-fg}${formatCost(cost.total, cost.pricingKnown)}{/yellow-fg}`,
-    `⏱  {gray-fg}${uptime}{/gray-fg}`,
+    `{gray-fg}model{/gray-fg} {yellow-fg}${model?.replace("claude-", "") ?? "?"}{/yellow-fg}`,
+    `{green-fg}${aliveCount} alive{/green-fg}`,
+    `{cyan-fg}${formatTokens(totalTokens)}{/cyan-fg} {gray-fg}tok{/gray-fg}`,
+    `{yellow-fg}${formatCost(cost.total, cost.pricingKnown)}{/yellow-fg}`,
+    `{gray-fg}up ${uptime}{/gray-fg}`,
     `{gray-fg}[Tab] [1-7] [r] [?] [q]{/gray-fg}`,
   ].join("  {gray-fg}│{/gray-fg}  ");
 

@@ -2,7 +2,7 @@ import type contrib from "blessed-contrib";
 import type { InstalledPlugin, McpAuthEntry } from "../../types.js";
 import type { ToolStat } from "../../data/tool-stats-reader.js";
 import { formatTokens, formatCost } from "../../util/format.js";
-import { clearLog } from "./log-utils.js";
+import { clearLog, logCapacity, scrollLogToTop } from "./log-utils.js";
 
 let lastFingerprint = "";
 
@@ -23,8 +23,24 @@ export function updatePluginsPanel(
 
   clearLog(log);
 
+  // Tool costs are the panel's most actionable content, so they get whatever
+  // space is left after the auth warnings and the plugin count. Both lists are
+  // trimmed rather than allowed to overflow and scroll out of view.
+  const capacity = logCapacity(log);
+  const shownIssues = mcpIssues.slice(0, 2);
+  const fixedLines = shownIssues.length + 1; // issues + "N plugins" summary
+  const toolHeaderLines = 4; // blank, title, column header, divider
+  const shownPlugins = plugins.slice(
+    0,
+    Math.max(0, Math.min(3, capacity - fixedLines - toolHeaderLines - 3))
+  );
+  const toolBudget = Math.max(
+    0,
+    capacity - fixedLines - shownPlugins.length - toolHeaderLines
+  );
+
   // ── Auth issues (warnings first) ──────────────────────────────────────────
-  for (const issue of mcpIssues) {
+  for (const issue of shownIssues) {
     log.log(`  {red-fg}! ${issue.name}{/red-fg}  {yellow-fg}AUTH NEEDED{/yellow-fg}`);
   }
 
@@ -34,7 +50,7 @@ export function updatePluginsPanel(
     `  {bold}${plugins.length}{/bold} plugins  {${issueTag}}${mcpIssues.length} auth issues{/${issueTag}}`
   );
 
-  for (const plugin of plugins.slice(0, 5)) {
+  for (const plugin of shownPlugins) {
     const hasIssue = mcpIssues.some((i) => i.name === plugin.name);
     const indicator = hasIssue ? "{yellow-fg}!{/yellow-fg}" : "{green-fg}+{/green-fg}";
     const version = plugin.version ? `  {gray-fg}v${plugin.version}{/gray-fg}` : "";
@@ -47,6 +63,7 @@ export function updatePluginsPanel(
   if (toolStats.length === 0) {
     log.log(`  {bold}{yellow-fg}Tool Costs (today){/yellow-fg}{/bold}`);
     log.log("  {gray-fg}No tool calls recorded today{/gray-fg}");
+    scrollLogToTop(log);
     return;
   }
 
@@ -56,7 +73,7 @@ export function updatePluginsPanel(
   log.log(`  {gray-fg}${"Name".padEnd(18)}  Calls  Tokens    Cost{/gray-fg}`);
   log.log(`  {gray-fg}${"─".repeat(44)}{/gray-fg}`);
 
-  const top = toolStats.slice(0, 7);
+  const top = toolStats.slice(0, toolBudget);
   const maxCost = top[0]?.estimatedCost ?? 0.0001;
 
   for (const stat of top) {
@@ -75,4 +92,6 @@ export function updatePluginsPanel(
 
     log.log(`  ${dot} {white-fg}${name}{/white-fg} {gray-fg}${calls}{/gray-fg}  {cyan-fg}${tokens}{/cyan-fg}  {yellow-fg}${cost}{/yellow-fg}`);
   }
+
+  scrollLogToTop(log);
 }
