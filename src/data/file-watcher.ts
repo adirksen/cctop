@@ -1,10 +1,8 @@
 import { watch, type FSWatcher } from "chokidar";
-import { join } from "node:path";
-import { PATHS } from "../config.js";
 import { EventEmitter } from "node:events";
+import { PATHS } from "../config.js";
 
 export type WatchEvent =
-  | "sessions-changed"
   | "history-changed"
   | "conversation-changed"
   | "plugins-changed"
@@ -12,54 +10,56 @@ export type WatchEvent =
   | "mcp-changed";
 
 /**
- * Watches ~/.claude/ for file changes and emits typed events
- * so aggregators and panels can refresh immediately.
+ * Watches ~/.claude/ for file changes and emits typed events so aggregators and
+ * panels can refresh immediately.
+ *
+ * chokidar 4 removed glob support: passing "dir/**\/*.jsonl" now watches a
+ * literal path by that name, which never exists, so the watcher silently never
+ * fires. Directories are watched directly instead and paths are filtered here.
  */
 export class ClaudeFileWatcher extends EventEmitter {
   private watchers: FSWatcher[] = [];
 
   async start(): Promise<void> {
-    // Watch session files (creation/removal = new/ended sessions)
+    // Conversation transcripts: ~/.claude/projects/<encoded-project>/<session>.jsonl
+    // Subagent transcripts live one level deeper, hence depth 3.
     this.watchers.push(
-      watch(join(PATHS.sessions, "*.json"), {
+      watch(PATHS.projects, {
         ignoreInitial: true,
-        awaitWriteFinish: { stabilityThreshold: 300 },
-      }).on("all", () => this.emit("sessions-changed"))
+        depth: 3,
+        awaitWriteFinish: { stabilityThreshold: 500 },
+      }).on("all", (_event, path) => {
+        if (path.endsWith(".jsonl")) this.emit("conversation-changed");
+      })
     );
 
-    // Watch history.jsonl for new commands
+    // history.jsonl gains a line per user command
     this.watchers.push(
       watch(PATHS.history, {
         ignoreInitial: true,
         awaitWriteFinish: { stabilityThreshold: 300 },
-      }).on("change", () => this.emit("history-changed"))
+      }).on("all", () => this.emit("history-changed"))
     );
 
-    // Watch project conversation files
+    // Config files. These may not exist yet, so listen for "add" as well as
+    // "change" — a plugin installed while cctop is running creates the file.
     this.watchers.push(
-      watch(join(PATHS.projects, "**", "*.jsonl"), {
+      watch([PATHS.plugins, PATHS.settings, PATHS.mcpAuth], {
         ignoreInitial: true,
         awaitWriteFinish: { stabilityThreshold: 500 },
-        depth: 3,
-      }).on("all", () => this.emit("conversation-changed"))
+      }).on("all", (_event, path) => {
+        if (path.includes("installed_plugins")) this.emit("plugins-changed");
+        else if (path.includes("mcp")) this.emit("mcp-changed");
+        else if (path.includes("settings")) this.emit("settings-changed");
+      })
     );
 
-    // Watch plugin and settings files
-    this.watchers.push(
-      watch(
-        [PATHS.plugins, PATHS.settings, PATHS.mcpAuth].filter(Boolean),
-        {
-          ignoreInitial: true,
-          awaitWriteFinish: { stabilityThreshold: 500 },
-        }
-      )
-        .on("change", (path) => {
-          if (path.includes("installed_plugins"))
-            this.emit("plugins-changed");
-          else if (path.includes("settings")) this.emit("settings-changed");
-          else if (path.includes("mcp")) this.emit("mcp-changed");
-        })
-    );
+    // Surface watcher failures instead of degrading to poll-only silently.
+    for (const w of this.watchers) {
+      w.on("error", (err) =>
+        this.emit("watch-error", err instanceof Error ? err : new Error(String(err)))
+      );
+    }
   }
 
   async stop(): Promise<void> {

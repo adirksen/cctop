@@ -26,10 +26,16 @@ export function formatBytes(bytes: number): string {
   return `${bytes}B`;
 }
 
-/** Format a dollar amount for cost estimation. */
-export function formatCost(dollars: number): string {
-  if (dollars < 0.01) return "<$0.01";
-  return `~$${dollars.toFixed(2)}`;
+/**
+ * Format a dollar amount for cost estimation.
+ *
+ * A leading `~` means the model's real price wasn't known and a family rate was
+ * substituted, so the figure is a guess rather than list price × token count.
+ */
+export function formatCost(dollars: number, pricingKnown = true): string {
+  const prefix = pricingKnown ? "" : "~";
+  if (dollars < 0.01) return `${prefix}<$0.01`;
+  return `${prefix}$${dollars.toFixed(2)}`;
 }
 
 /** Format a timestamp to HH:MM local time. */

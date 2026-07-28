@@ -1,101 +1,22 @@
-import type {
-  ConversationEntry,
-  CostEstimate,
-  ModelPricing,
-  TokenBucket,
-  TokenUsage,
-} from "../types.js";
-import { readConversation } from "../data/conversation-reader.js";
-import { listProjectDirs, listSessionFiles } from "../data/claude-home.js";
-import { DEFAULT_PRICING, MODEL_PRICING } from "../config.js";
+import type { CostEstimate, ModelPricing, TokenUsage } from "../types.js";
+import { DEFAULT_PRICING, FAMILY_PRICING, MODEL_PRICING } from "../config.js";
 
-const EMPTY_USAGE: TokenUsage = {
-  input_tokens: 0,
-  output_tokens: 0,
-  cache_creation_input_tokens: 0,
-  cache_read_input_tokens: 0,
-};
-
-/** Get today's total token usage across all projects and sessions. */
-export async function getTodayTokens(): Promise<TokenUsage> {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const startTs = startOfDay.toISOString();
-
-  const total = { ...EMPTY_USAGE };
-  const projectDirs = await listProjectDirs();
-
-  for (const proj of projectDirs) {
-    const sessionFiles = await listSessionFiles(proj);
-    for (const file of sessionFiles) {
-      const sessionId = file.replace(".jsonl", "");
-      const entries = await readConversation(proj, sessionId);
-
-      for (const entry of entries) {
-        if (
-          entry.type === "assistant" &&
-          entry.message?.usage &&
-          entry.timestamp >= startTs
-        ) {
-          const u = entry.message.usage;
-          total.input_tokens += u.input_tokens ?? 0;
-          total.output_tokens += u.output_tokens ?? 0;
-          total.cache_creation_input_tokens +=
-            u.cache_creation_input_tokens ?? 0;
-          total.cache_read_input_tokens += u.cache_read_input_tokens ?? 0;
-        }
-      }
-    }
-  }
-
-  return total;
+/** A zero-valued usage record. Always returns a fresh object — safe to mutate. */
+export function emptyUsage(): TokenUsage {
+  return {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
+  };
 }
 
-/**
- * Build a time series of token usage for the last N minutes, bucketed by minute.
- * Used for the sparkline chart.
- */
-export async function getTokenTimeSeries(
-  entries: ConversationEntry[],
-  minutes = 60
-): Promise<TokenBucket[]> {
-  const now = Date.now();
-  const startTime = now - minutes * 60 * 1000;
-
-  // Initialize buckets
-  const buckets: TokenBucket[] = [];
-  for (let i = 0; i < minutes; i++) {
-    buckets.push({
-      timestamp: startTime + i * 60 * 1000,
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheCreation: 0,
-    });
-  }
-
-  // Fill buckets from entries
-  for (const entry of entries) {
-    if (entry.type !== "assistant" || !entry.message?.usage) continue;
-
-    const ts = new Date(entry.timestamp).getTime();
-    if (ts < startTime) continue;
-
-    const bucketIndex = Math.min(
-      Math.floor((ts - startTime) / (60 * 1000)),
-      minutes - 1
-    );
-    const bucket = buckets[bucketIndex];
-    if (!bucket) continue;
-
-    const u = entry.message.usage;
-    bucket.input += u.input_tokens ?? 0;
-    bucket.output += u.output_tokens ?? 0;
-    bucket.cacheRead += u.cache_read_input_tokens ?? 0;
-    bucket.cacheCreation += u.cache_creation_input_tokens ?? 0;
-  }
-
-  return buckets;
+/** Add `add` into `total` in place. */
+export function addUsage(total: TokenUsage, add: Partial<TokenUsage>): void {
+  total.input_tokens += add.input_tokens ?? 0;
+  total.output_tokens += add.output_tokens ?? 0;
+  total.cache_creation_input_tokens += add.cache_creation_input_tokens ?? 0;
+  total.cache_read_input_tokens += add.cache_read_input_tokens ?? 0;
 }
 
 /** Estimate cost from token usage and model name. */
@@ -103,7 +24,7 @@ export function estimateCost(
   tokens: TokenUsage,
   model?: string
 ): CostEstimate {
-  const pricing = findPricing(model);
+  const { pricing, known } = resolvePricing(model);
 
   const inputCost = (tokens.input_tokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost =
@@ -120,22 +41,60 @@ export function estimateCost(
     cacheReadCost,
     cacheCreationCost,
     total: inputCost + outputCost + cacheReadCost + cacheCreationCost,
+    pricingKnown: known,
   };
 }
 
-function findPricing(model?: string): ModelPricing {
-  if (!model) return DEFAULT_PRICING;
+/** Sum several already-computed estimates, preserving the confidence flag. */
+export function sumCosts(estimates: CostEstimate[]): CostEstimate {
+  const total: CostEstimate = {
+    inputCost: 0,
+    outputCost: 0,
+    cacheReadCost: 0,
+    cacheCreationCost: 0,
+    total: 0,
+    pricingKnown: true,
+  };
 
-  // Try exact match first, then prefix match
-  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
-
-  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
-    if (model.startsWith(key) || model.includes(key)) return pricing;
+  for (const e of estimates) {
+    total.inputCost += e.inputCost;
+    total.outputCost += e.outputCost;
+    total.cacheReadCost += e.cacheReadCost;
+    total.cacheCreationCost += e.cacheCreationCost;
+    total.total += e.total;
+    if (!e.pricingKnown) total.pricingKnown = false;
   }
 
-  // Match by family name
-  if (model.includes("opus")) return MODEL_PRICING["claude-opus-4-6"]!;
-  if (model.includes("haiku")) return MODEL_PRICING["claude-haiku-4-5"]!;
+  return total;
+}
 
-  return DEFAULT_PRICING;
+/**
+ * Look up pricing for a model ID.
+ *
+ * `known` is false whenever the exact model wasn't in the table, so callers can
+ * distinguish a real price from an inherited family rate. Conversation files
+ * sometimes carry a dated or vendor-prefixed ID (`anthropic.claude-opus-5`,
+ * `claude-opus-5-20260115`), so a substring match on a table key still counts
+ * as an exact hit.
+ */
+export function resolvePricing(model?: string): {
+  pricing: ModelPricing;
+  known: boolean;
+} {
+  if (!model || model === "unknown") {
+    return { pricing: DEFAULT_PRICING, known: false };
+  }
+
+  const exact = MODEL_PRICING[model];
+  if (exact) return { pricing: exact, known: true };
+
+  for (const [key, value] of Object.entries(MODEL_PRICING)) {
+    if (model.includes(key)) return { pricing: value, known: true };
+  }
+
+  for (const [family, value] of FAMILY_PRICING) {
+    if (model.includes(family)) return { pricing: value, known: false };
+  }
+
+  return { pricing: DEFAULT_PRICING, known: false };
 }

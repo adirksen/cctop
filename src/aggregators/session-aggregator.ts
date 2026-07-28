@@ -44,12 +44,6 @@ export async function aggregateSessions(): Promise<ActiveSession[]> {
   );
 }
 
-/** Get only alive sessions, sorted by start time (newest first). */
-export async function getActiveSessions(): Promise<ActiveSession[]> {
-  const all = await aggregateSessions();
-  return all.filter((s) => s.isAlive).sort((a, b) => b.startedAt - a.startedAt);
-}
-
 /** Get all sessions (alive + dead), sorted by start time. */
 export async function getAllSessions(): Promise<ActiveSession[]> {
   const all = await aggregateSessions();

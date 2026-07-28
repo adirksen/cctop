@@ -178,7 +178,7 @@ export async function showHistoryDetail(
         `{bold}Cache wr{/bold} {gray-fg}${formatTokens(tokens.cache_creation_input_tokens)}{/gray-fg}`,
       ].join("   ");
       container.setContent(
-        buildLines({ model, tokenLine, costLine: formatCost(cost.total) })
+        buildLines({ model, tokenLine, costLine: formatCost(cost.total, cost.pricingKnown) })
       );
       screen.render();
     })

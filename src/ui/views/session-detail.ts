@@ -90,11 +90,11 @@ export function showSessionDetail(
     `  Cache wr  {gray-fg}${formatTokens(t.cache_creation_input_tokens)}{/gray-fg}`,
     "",
     `  {bold}{yellow-fg}Estimated Cost{/yellow-fg}{/bold}`,
-    `  Input     {cyan-fg}${formatCost(cost.inputCost)}{/cyan-fg}`,
-    `  Output    {yellow-fg}${formatCost(cost.outputCost)}{/yellow-fg}`,
-    `  Cache rd  {green-fg}${formatCost(cost.cacheReadCost)}{/green-fg}`,
-    `  Cache wr  {gray-fg}${formatCost(cost.cacheCreationCost)}{/gray-fg}`,
-    `  {bold}Total     {yellow-fg}${formatCost(cost.total)}{/yellow-fg}{/bold}`,
+    `  Input     {cyan-fg}${formatCost(cost.inputCost, cost.pricingKnown)}{/cyan-fg}`,
+    `  Output    {yellow-fg}${formatCost(cost.outputCost, cost.pricingKnown)}{/yellow-fg}`,
+    `  Cache rd  {green-fg}${formatCost(cost.cacheReadCost, cost.pricingKnown)}{/green-fg}`,
+    `  Cache wr  {gray-fg}${formatCost(cost.cacheCreationCost, cost.pricingKnown)}{/gray-fg}`,
+    `  {bold}Total     {yellow-fg}${formatCost(cost.total, cost.pricingKnown)}{/yellow-fg}{/bold}`,
   ].join("\n");
 
   blessed.box({

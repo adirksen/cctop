@@ -1,5 +1,6 @@
 import type contrib from "blessed-contrib";
-import type { ActiveSession, TokenUsage } from "../../types.js";
+import type { ActiveSession } from "../../types.js";
+import type { TodayStats } from "../../aggregators/today-aggregator.js";
 import { formatTokens, formatCost } from "../../util/format.js";
 import { estimateCost } from "../../aggregators/token-aggregator.js";
 import { clearLog } from "./log-utils.js";
@@ -13,15 +14,14 @@ export function resetFingerprint(): void {
 export function updateTokensPanel(
   log: contrib.Widgets.LogElement,
   sessions: ActiveSession[],
-  todayTokens: TokenUsage,
-  model?: string
+  today: TodayStats
 ): void {
-  const cost = estimateCost(todayTokens, model);
+  const { tokens, cost } = today;
   const totalIn =
-    todayTokens.input_tokens +
-    todayTokens.cache_read_input_tokens +
-    todayTokens.cache_creation_input_tokens;
-  const totalOut = todayTokens.output_tokens;
+    tokens.input_tokens +
+    tokens.cache_read_input_tokens +
+    tokens.cache_creation_input_tokens;
+  const totalOut = tokens.output_tokens;
 
   const fingerprint = `${totalIn}:${totalOut}:${sessions.length}`;
   if (fingerprint === lastFingerprint) return;
@@ -29,14 +29,16 @@ export function updateTokensPanel(
 
   clearLog(log);
 
-  log.log(`  {bold}Today{/bold}   {yellow-fg}${formatCost(cost.total)}{/yellow-fg}`);
+  log.log(
+    `  {bold}Today{/bold}   {yellow-fg}${formatCost(cost.total, cost.pricingKnown)}{/yellow-fg}`
+  );
   log.log(`  In    {cyan-fg}${formatTokens(totalIn)}{/cyan-fg}`);
   log.log(`  Out   {yellow-fg}${formatTokens(totalOut)}{/yellow-fg}`);
   log.log(
-    `  Cache read   {green-fg}${formatTokens(todayTokens.cache_read_input_tokens)}{/green-fg}`
+    `  Cache read   {green-fg}${formatTokens(tokens.cache_read_input_tokens)}{/green-fg}`
   );
   log.log(
-    `  Cache write  {gray-fg}${formatTokens(todayTokens.cache_creation_input_tokens)}{/gray-fg}`
+    `  Cache write  {gray-fg}${formatTokens(tokens.cache_creation_input_tokens)}{/gray-fg}`
   );
   log.log("");
 
@@ -48,7 +50,7 @@ export function updateTokensPanel(
     const sessionCost = estimateCost(t, s.model);
     const dot = s.isAlive ? "{green-fg}●{/green-fg}" : "{gray-fg}○{/gray-fg}";
     log.log(
-      `  ${dot} {bold}${s.projectName}{/bold}  {yellow-fg}${formatCost(sessionCost.total)}{/yellow-fg}`
+      `  ${dot} {bold}${s.projectName}{/bold}  {yellow-fg}${formatCost(sessionCost.total, sessionCost.pricingKnown)}{/yellow-fg}`
     );
     log.log(
       `    {cyan-fg}${formatTokens(sessionIn)}{/cyan-fg} in  {yellow-fg}${formatTokens(t.output_tokens)}{/yellow-fg} out`

@@ -63,9 +63,7 @@ export function updatePluginsPanel(
     const name = stat.name.slice(0, 18).padEnd(18);
     const calls = String(stat.calls).padStart(5);
     const tokens = formatTokens(stat.resultTokens + stat.outputTokens).padStart(8);
-    const cost = stat.estimatedCost >= 0.01
-      ? formatCost(stat.estimatedCost).padStart(7)
-      : " <$0.01";
+    const cost = formatCost(stat.estimatedCost, stat.pricingKnown).padStart(7);
 
     // Intensity dot: shows relative cost rank
     const intensity = stat.estimatedCost / maxCost;
