@@ -4,33 +4,9 @@
 
 cctop answers all three at a glance, live, in your terminal — inspired by `htop` and `btop`.
 
-```
-┌ Sessions [Enter] ──────────┐┌ Tokens ────────────────────┐┌ System ────────────────────┐
-│ PID      Project  Duration ││  Today   $1.24             ││  CPU  ████████░░░░  64%     │
-│ ● 18432  cctop    2h 14m   ││  In      1.24M             ││  MEM  █████████░░░  72%     │
-│ ○ 17901  api-svc  4h 02m   ││  Out     312K              ││       5.8 GB / 8.0 GB       │
-│                            ││  Cache read   945K         ││                             │
-│                            ││  Cache write  204K         ││  RSS  148 MB  Heap 89 MB    │
-│                            ││  ● cctop   $0.89           ││  Claude PIDs: 1             │
-│                            ││    1.1M in  298K out       ││                             │
-└────────────────────────────┘└────────────────────────────┘└────────────────────────────┘
-┌ Agents ──────────────┐┌ History [Enter: detail] ────────────────────────────────────────┐
-│ PID    Type  Status  ││ Time      Project   Command                                      │
-│ 18432  tool  active  ││ 14:32:10  cctop     add backdrop to session detail panels        │
-│                      ││ 14:28:44  cctop     fix selected index bug in drill-down         │
-│                      ││ 14:19:05  api-svc   implement JWT refresh endpoint               │
-└──────────────────────┘└─────────────────────────────────────────────────────────────────┘
-┌ Projects ──────────┐┌ Plugins & MCP ──────────────────────────────────────────────────  ┐
-│  ▓▓▓▓▓▓▓▓         ││  2 plugins  0 auth issues                                          │
-│  ▓▓▓▓   ▓▓▓▓▓▓    ││  + bitbucket-cloud  v1.2.0                                        │
-│  cctop  api-svc   ││                                                                    │
-└────────────────────┘│  Tool Costs (today)   est. input+output                           │
-                      │  Name                Calls  Tokens    Cost                         │
-                      │  ─────────────────────────────────────────                         │
-                      │  ● bash                245   1.24M   $3.72                         │
-                      │  ● read_file            183    856K   $2.57                        │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-```
+![cctop dashboard: live sessions, today's token spend, sub-agents, command history, and per-tool costs — then drilling into a session's full cost breakdown](docs/demo.gif)
+
+*Recorded against a synthetic `~/.claude` (see `docs/make-demo-home.mjs`) — no real conversations were harmed.*
 
 ## Why
 
