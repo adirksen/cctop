@@ -1,8 +1,8 @@
 # cctop
 
-A live terminal dashboard for monitoring [Claude Code](https://claude.ai/code) sessions — inspired by `htop` and `btop`.
+**How much did Claude Code cost you today? Which session is burning tokens right now? Which one is stuck?**
 
-Watch your active sessions, token usage, agent activity, and tool costs in real time without leaving the terminal.
+cctop answers all three at a glance, live, in your terminal — inspired by `htop` and `btop`.
 
 ```
 ┌ Sessions [Enter] ──────────┐┌ Tokens ────────────────────┐┌ System ────────────────────┐
@@ -32,40 +32,71 @@ Watch your active sessions, token usage, agent activity, and tool costs in real 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## Why
 
-- **Live session tracking** — detects running Claude Code processes and derives active sessions from `history.jsonl`
-- **Token usage** — today's input, output, and cache tokens with estimated cost per session
-- **Agent activity** — shows spawned sub-agents per session with type and message count
-- **Command history** — recent commands across all projects, drillable to full session detail
-- **System resources** — CPU, memory (with GB numbers), and cctop process RSS/heap
-- **Project breakdown** — bar chart of sessions per project
-- **Plugin & tool costs** — installed MCP plugins with status indicators + today's tool call token cost ranked by impact
-- **Drill-down views** — press Enter on Sessions or History to open detailed overlays with scrollable message history, token breakdown by type, and agent list
-- **Responsive layout** — rebuilds grid on terminal resize with a loading animation
-- **Focus indicator** — active panel border turns white; Tab/Shift+Tab or 1–7 to navigate
+Claude Code tells you what it's doing right now, in one terminal. It doesn't tell you what
+*all* of your sessions are doing, what they've cost, or which tools are quietly eating your
+context window. That information is sitting in `~/.claude/` — cctop just shows it to you.
 
-## Requirements
+**Running more than one session at a time?** That's when a dashboard stops being a curiosity
+and starts being mission control: which of your five sessions is still working, which
+sub-agent has been running for twenty minutes, what last night's autonomous run actually cost.
 
-- Node.js 20+
-- [Claude Code](https://claude.ai/code) installed and has been used at least once (reads `~/.claude/`)
-- Windows, macOS, or Linux
+**On a Pro or Max plan?** The dollar figures are API-equivalent value, not a bill — a useful
+way to see what your subscription is doing for you, and which projects are getting the most
+out of it.
 
-## Installation
+**Paying per token?** The numbers are real. cctop prices every session with the model that
+session actually ran on, using current published rates.
+
+> **cctop vs. `ccusage` and friends:** those tools produce retrospective cost reports, and do
+> it well. cctop is a live process monitor that happens to know about costs — running
+> processes, active sub-agents, system load, and spend on one screen that updates as you work.
+
+## What each panel tells you
+
+| Panel | The question it answers |
+|-------|--------------------------|
+| **Sessions** | Which Claude Code processes are running, in which project, for how long, on which model |
+| **Tokens** | What today cost, split by input / output / cache — plus a per-session breakdown |
+| **Agents** | Which sub-agents your sessions spawned, and how much work each one did |
+| **History** | What you've asked for recently across every project — press `Enter` for the full session |
+| **Projects** | Where your Claude Code time actually goes |
+| **Plugins & MCP** | Installed plugins, MCP servers needing re-auth, and **which tools eat your context window** |
+| **System** | CPU, memory, and what cctop itself is costing you in RAM |
+
+The Plugins panel is the one people find most immediately actionable: it ranks today's tool
+calls by estimated token cost, so when `bash` results turn out to be 40% of your input tokens,
+you know there's something to fix.
+
+Press `Enter` on Sessions or History to drill into a full session — scrollable message
+history, token breakdown by type, and the sub-agents it spawned.
+
+## Install
 
 ```bash
-# Clone and install dependencies
-git clone <repo-url>
+git clone https://github.com/adirksen/cctop.git
 cd cctop
 npm install
-
-# Run directly (no build step needed)
-npm run dev
-
-# Or build a standalone binary
-npm run build
-node dist/cctop.js
+npm run dev          # run directly, no build step
 ```
+
+To build a standalone bundle and put it on your `PATH`:
+
+```bash
+npm run build
+npm link             # then run `cctop` from anywhere
+```
+
+> **Not on npm yet.** The name `cctop` is taken by an unrelated package, so
+> `npx cctop` installs someone else's tool — don't. Install from source until a
+> published name is settled.
+
+### Requirements
+
+- Node.js 20+
+- [Claude Code](https://claude.ai/code) installed and used at least once (cctop reads `~/.claude/`)
+- macOS, Linux, or Windows
 
 ## Keybindings
 
@@ -81,24 +112,45 @@ node dist/cctop.js
 
 Within drill-down views, `j` / `k` or arrow keys scroll content.
 
-## Data Sources
+## Privacy
 
-cctop reads only from the local `~/.claude/` directory — no network calls, no telemetry.
+**cctop makes no network calls and sends no telemetry.** It reads local files under
+`~/.claude/` and nothing else. Your conversations never leave your machine.
+
+The only external commands it runs are for process discovery: `pgrep` and `lsof` on
+macOS/Linux, `tasklist` on Windows.
 
 | Data | Source |
 |------|--------|
-| Sessions | `~/.claude/history.jsonl` (derived — Claude Code no longer writes session files in recent versions) |
+| Sessions | `~/.claude/history.jsonl` (derived — Claude Code no longer writes session files) |
 | Token usage & messages | `~/.claude/projects/<encoded-path>/<session-id>.jsonl` |
-| Running Claude PIDs | `tasklist` (Windows) / `pgrep` (macOS/Linux) |
+| Sub-agents | `~/.claude/projects/<encoded-path>/<session-id>/subagents/` |
+| Running Claude processes | `pgrep` + `lsof` (macOS/Linux) / `tasklist` (Windows) |
 | Installed plugins | `~/.claude/plugins/installed_plugins.json` |
 | MCP auth status | `~/.claude/mcp-needs-auth-cache.json` |
 | Settings / model | `~/.claude/settings.json` |
 
-## Cost Estimation
+## How the numbers are calculated
 
-Token costs are estimated using [Anthropic's public pricing](https://www.anthropic.com/pricing) and the model name extracted from each session's conversation file. The per-session cost is the **cumulative API cost** — each Claude API call sends the full conversation context, so long sessions with many turns compound naturally.
+**Token counts are exact.** They come from the `usage` field Claude Code records for every
+assistant turn — cctop does not estimate them.
 
-Tool costs in the Plugins panel are attributed by matching `tool_use` blocks to their `tool_result` content sizes (chars ÷ 4 ≈ tokens), giving a relative ranking of which tools consume the most context.
+**Costs** are those token counts multiplied by [Anthropic's published
+pricing](https://www.anthropic.com/pricing), using the model recorded in each session's own
+transcript. A session that ran on Opus is priced as Opus even if your current default is
+Sonnet. Cache reads bill at 0.1× the input rate and cache writes at 1.25×, matching the
+5-minute cache Claude Code uses.
+
+Per-session cost is **cumulative API cost**: every turn resends the whole conversation, so
+long sessions compound — that's real spend, not double-counting.
+
+A cost shown as `~$1.24` means the model wasn't in cctop's pricing table and a rate from the
+same model family was substituted. A cost without the `~` is list price × exact token count.
+If you're on a subscription plan, treat every figure as API-equivalent value rather than a bill.
+
+**Tool costs in the Plugins panel are the one real estimate.** Tool results carry no usage
+data of their own, so their input cost is derived from result size (characters ÷ 4 ≈ tokens).
+Read them as a ranking of which tools are expensive, not as an exact number.
 
 ## Architecture
 
@@ -109,7 +161,8 @@ src/
   config.ts           Paths, intervals, model pricing table
   types.ts            Shared interfaces (ActiveSession, HistoryEntry, TokenUsage, …)
   data/               Raw readers (JSONL, process list, file system)
-  aggregators/        Data aggregation (sessions, tokens, projects, agents, tool stats)
+    conversation-cache.ts   mtime-validated, incrementally-appending transcript cache
+  aggregators/        Data aggregation (sessions, today's tokens + tool costs, projects, agents)
   ui/
     layout.ts         12×12 blessed-contrib grid definition
     theme.ts          Color palette (amber top / teal mid / purple bot)
@@ -117,14 +170,23 @@ src/
     loading-overlay.ts  Randomized ASCII art spinner shown during resize/startup
     panels/           Per-panel update functions (sessions, tokens, system, …)
     views/            Full-screen drill-down overlays (session detail, history detail)
-  util/               JSONL reader with offset tracking, formatting helpers
+  util/               JSONL parsing, formatting helpers
 ```
 
-## Known Limitations
+Transcripts are parsed once and cached against `(mtime, size)`; a file that grows is re-parsed
+only from the byte where the last read stopped. Aggregates scoped to today skip transcripts
+last modified before midnight. In a directory with 291 transcripts totalling 134 MB, a
+steady-state refresh costs about 25 ms.
 
-- Token attribution per tool is an estimate (result content size / 4), not an exact count
-- Session liveness detection matches running `claude.exe` / `claude` processes to the N most-recently-active sessions — accurate when one session per process, approximate otherwise
-- Very large `history.jsonl` files (100k+ entries) may cause a slight delay on startup
+## Known limitations
+
+- **Tool cost attribution is an estimate** (result size ÷ 4), not an exact token count.
+- **Session liveness needs `lsof`.** Sessions are matched to processes by working directory.
+  Where that's unavailable — Windows, or a restricted `lsof` — cctop shows no PID rather than
+  a possibly-wrong one, and falls back to marking recently-active sessions as live.
+- **Two sessions in the same directory** are matched to that directory's processes by
+  recency, which can transpose them.
+- **Very large `history.jsonl` files** (100k+ entries) add a small startup delay.
 
 ## License
 
