@@ -6,12 +6,26 @@
   "bin": {
     "cctop": "./dist/cctop.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adirksen/cctop.git"
+  },
+  "homepage": "https://github.com/adirksen/cctop#readme",
+  "bugs": {
+    "url": "https://github.com/adirksen/cctop/issues"
+  },
   "scripts": {
     "dev": "tsx bin/cctop.ts",
-    "build": "esbuild bin/cctop.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cctop.js --banner:js=\"#!/usr/bin/env node\" --external:neo-blessed --external:blessed --external:blessed-contrib --external:term.js --external:pty.js",
+    "build": "esbuild bin/cctop.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cctop.js --external:neo-blessed --external:blessed --external:blessed-contrib --external:term.js --external:pty.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -22,7 +36,10 @@
     "terminal",
     "dashboard",
     "tui",
-    "monitor"
+    "monitor",
+    "token-usage",
+    "cost-tracking",
+    "htop"
   ],
   "author": "Anthony Dirksen",
   "license": "MIT",

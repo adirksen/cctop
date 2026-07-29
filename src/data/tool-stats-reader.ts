@@ -1,6 +1,5 @@
-import { listProjectDirs, listSessionFiles } from "./claude-home.js";
-import { readConversation } from "./conversation-reader.js";
-import { DEFAULT_PRICING } from "../config.js";
+import type { ConversationEntry } from "../types.js";
+import { resolvePricing } from "../aggregators/token-aggregator.js";
 
 export interface ToolStat {
   name: string;
@@ -11,90 +10,118 @@ export interface ToolStat {
   outputTokens: number;
   /** Rough USD cost estimate (result input + output) */
   estimatedCost: number;
+  /** False if any contributing call used a model with no known price. */
+  pricingKnown: boolean;
 }
 
+export type ToolStatAccumulator = Map<string, ToolStat>;
+
 type ToolUseBlock = { type: "tool_use"; id: string; name: string };
-type ToolResultBlock = { type: "tool_result"; tool_use_id: string; content: unknown };
+type ToolResultBlock = {
+  type: "tool_result";
+  tool_use_id: string;
+  content: unknown;
+};
+
+/** Characters per token, used to size tool results that carry no usage data. */
+const CHARS_PER_TOKEN = 4;
 
 /**
- * Scan today's conversations and attribute token costs to each tool.
+ * Attribute token cost to each tool across one session's entries.
  *
  * Attribution model:
- *  - Output tokens: assistant message's output_tokens / # of tool calls in that message
- *  - Input tokens: character length of tool_result content / 4 (chars-per-token estimate)
+ *  - Output tokens: the assistant message's output_tokens split evenly across
+ *    the tool calls in that message.
+ *  - Input tokens: the tool_result's content length / 4, since results carry no
+ *    usage of their own.
+ *
+ * Cost is priced with the model that actually produced each call rather than a
+ * single global model, so a session mixing Opus and Haiku is costed correctly.
  */
-export async function getTodayToolStats(): Promise<ToolStat[]> {
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const startTs = startOfDay.toISOString();
+export function accumulateToolStats(
+  entries: ConversationEntry[],
+  startTs: string,
+  stats: ToolStatAccumulator
+): void {
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    if (
+      entry.type !== "assistant" ||
+      !entry.timestamp ||
+      entry.timestamp < startTs
+    ) {
+      continue;
+    }
 
-  // name → accumulated stats
-  const stats = new Map<string, { calls: number; resultTokens: number; outputTokens: number }>();
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
 
-  const projectDirs = await listProjectDirs();
+    const toolUses = content.filter(
+      (b): b is ToolUseBlock => b.type === "tool_use" && !!b.name
+    );
+    if (toolUses.length === 0) continue;
 
-  for (const proj of projectDirs) {
-    const sessionFiles = await listSessionFiles(proj);
+    const { pricing, known } = resolvePricing(entry.message?.model);
+    const outputPerCall = Math.round(
+      (entry.message?.usage?.output_tokens ?? 0) / toolUses.length
+    );
 
-    for (const file of sessionFiles) {
-      const sessionId = file.replace(".jsonl", "");
-      const entries = await readConversation(proj, sessionId);
+    const idToName = new Map<string, string>();
+    for (const tu of toolUses) {
+      const name = toolDisplayName(tu.name);
+      idToName.set(tu.id, name);
 
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i]!;
-        if (entry.type !== "assistant" || !entry.timestamp || entry.timestamp < startTs) continue;
+      const s = statFor(stats, name);
+      s.calls++;
+      s.outputTokens += outputPerCall;
+      s.estimatedCost +=
+        (outputPerCall / 1_000_000) * pricing.outputPerMillion;
+      if (!known) s.pricingKnown = false;
+    }
 
-        const content = entry.message?.content;
-        if (!Array.isArray(content)) continue;
+    // Tool results arrive in the immediately following user message.
+    const nextEntry = entries[i + 1];
+    if (nextEntry?.type !== "user" || !Array.isArray(nextEntry.message?.content)) {
+      continue;
+    }
 
-        const toolUses = content.filter((b): b is ToolUseBlock => b.type === "tool_use" && !!b.name);
-        if (toolUses.length === 0) continue;
+    const results = (nextEntry.message.content as ToolResultBlock[]).filter(
+      (b) => b.type === "tool_result"
+    );
 
-        const outputPerCall = Math.round((entry.message?.usage?.output_tokens ?? 0) / toolUses.length);
+    for (const result of results) {
+      const toolName = idToName.get(result.tool_use_id);
+      if (!toolName) continue;
 
-        // Build id→name map for this assistant turn
-        const idToName = new Map<string, string>();
-        for (const tu of toolUses) {
-          idToName.set(tu.id, toolDisplayName(tu.name));
-        }
-
-        // Accumulate output tokens per tool name
-        for (const tu of toolUses) {
-          const name = toolDisplayName(tu.name);
-          const s = stats.get(name) ?? { calls: 0, resultTokens: 0, outputTokens: 0 };
-          s.calls++;
-          s.outputTokens += outputPerCall;
-          stats.set(name, s);
-        }
-
-        // Look at the immediately following user message for tool_result content
-        const nextEntry = entries[i + 1];
-        if (nextEntry?.type === "user" && Array.isArray(nextEntry.message?.content)) {
-          const results = (nextEntry.message!.content as ToolResultBlock[])
-            .filter((b) => b.type === "tool_result");
-
-          for (const result of results) {
-            const toolName = idToName.get(result.tool_use_id);
-            if (!toolName) continue;
-
-            const chars = contentLength(result.content);
-            const tokens = Math.round(chars / 4);
-
-            const s = stats.get(toolName);
-            if (s) s.resultTokens += tokens;
-          }
-        }
-      }
+      const tokens = Math.round(contentLength(result.content) / CHARS_PER_TOKEN);
+      const s = statFor(stats, toolName);
+      s.resultTokens += tokens;
+      s.estimatedCost += (tokens / 1_000_000) * pricing.inputPerMillion;
     }
   }
+}
 
-  return Array.from(stats.entries())
-    .map(([name, s]) => {
-      const inputCost = (s.resultTokens / 1_000_000) * DEFAULT_PRICING.inputPerMillion;
-      const outputCost = (s.outputTokens / 1_000_000) * DEFAULT_PRICING.outputPerMillion;
-      return { name, ...s, estimatedCost: inputCost + outputCost };
-    })
-    .sort((a, b) => b.estimatedCost - a.estimatedCost || b.calls - a.calls);
+/** Sort accumulated stats by cost, then call count. */
+export function finalizeToolStats(stats: ToolStatAccumulator): ToolStat[] {
+  return Array.from(stats.values()).sort(
+    (a, b) => b.estimatedCost - a.estimatedCost || b.calls - a.calls
+  );
+}
+
+function statFor(stats: ToolStatAccumulator, name: string): ToolStat {
+  let s = stats.get(name);
+  if (!s) {
+    s = {
+      name,
+      calls: 0,
+      resultTokens: 0,
+      outputTokens: 0,
+      estimatedCost: 0,
+      pricingKnown: true,
+    };
+    stats.set(name, s);
+  }
+  return s;
 }
 
 function contentLength(content: unknown): number {
@@ -111,8 +138,8 @@ function contentLength(content: unknown): number {
   return 0;
 }
 
-/** Convert raw tool name to a short display name. */
-function toolDisplayName(rawName: string): string {
+/** Convert a raw tool name to a short display name. */
+export function toolDisplayName(rawName: string): string {
   if (rawName.startsWith("mcp__")) {
     const parts = rawName.split("__");
     const plugin = (parts[1] ?? "mcp")

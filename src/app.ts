@@ -7,14 +7,13 @@ import { showLoadingOverlay } from "./ui/loading-overlay.js";
 
 // Data aggregators
 import { getAllSessions } from "./aggregators/session-aggregator.js";
-import { getTodayTokens } from "./aggregators/token-aggregator.js";
+import { getTodayStats } from "./aggregators/today-aggregator.js";
 import { aggregateProjects } from "./aggregators/project-aggregator.js";
 import { aggregateAgents } from "./aggregators/agent-aggregator.js";
 import { getRecentHistory } from "./data/history-reader.js";
 import { readSettings } from "./data/settings-reader.js";
 import { readInstalledPlugins } from "./data/plugin-reader.js";
 import { readMcpAuthIssues } from "./data/mcp-reader.js";
-import { getTodayToolStats } from "./data/tool-stats-reader.js";
 import { getSystemStats } from "./data/process-monitor.js";
 import { readConversation } from "./data/conversation-reader.js";
 
@@ -37,7 +36,7 @@ import { showHistoryDetail } from "./ui/views/history-detail.js";
 
 // Utils
 import { formatDuration, formatTokens, formatCost } from "./util/format.js";
-import { estimateCost } from "./aggregators/token-aggregator.js";
+import { estimateCost, sumCosts } from "./aggregators/token-aggregator.js";
 import type { ActiveSession, HistoryEntry } from "./types.js";
 
 // ── Module state ──────────────────────────────────────────────────────────────
@@ -46,11 +45,18 @@ let widgets: DashboardWidgets;
 let screen: blessed.Widgets.Screen;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let systemTimer: ReturnType<typeof setInterval> | undefined;
+let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 const fileWatcher = new ClaudeFileWatcher();
 let cachedSessions: ActiveSession[] = [];
 let cachedHistory: HistoryEntry[] = [];
 let inDrillDown = false;
 let hideLoading: (() => void) | undefined;
+
+// A single refresh scans every recent transcript, so overlapping runs would
+// compete for the same I/O. One runs at a time; requests that arrive mid-run
+// collapse into a single follow-up.
+let refreshInFlight = false;
+let refreshQueued = false;
 
 // Mutable — keybinding closures capture this reference so resize updates work
 const focusable: (blessed.Widgets.BlessedElement & { focus: () => void })[] = [];
@@ -195,12 +201,18 @@ export async function startApp(): Promise<void> {
           await refreshAll();
 
           await fileWatcher.start();
-          fileWatcher.on("sessions-changed", () => void refreshAll());
-          fileWatcher.on("conversation-changed", () => void refreshAll());
-          fileWatcher.on("history-changed", () => void refreshAll());
-          fileWatcher.on("plugins-changed", () => void refreshAll());
-          fileWatcher.on("settings-changed", () => void refreshAll());
-          fileWatcher.on("mcp-changed", () => void refreshAll());
+          for (const event of [
+            "conversation-changed",
+            "history-changed",
+            "plugins-changed",
+            "settings-changed",
+            "mcp-changed",
+          ] as const) {
+            fileWatcher.on(event, scheduleRefresh);
+          }
+          fileWatcher.on("watch-error", (err: Error) => {
+            process.stderr.write(`[cctop] watch error: ${err.message}\n`);
+          });
 
           refreshTimer = setInterval(
             () => void refreshAll(),
@@ -228,10 +240,26 @@ export async function startApp(): Promise<void> {
 
 // ── Data refresh ─────────────────────────────────────────────────────────────
 
+/** Coalesce bursts of watcher events into one refresh. */
+function scheduleRefresh(): void {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    debounceTimer = undefined;
+    void refreshAll();
+  }, INTERVALS.refreshDebounce);
+}
+
 async function refreshAll(): Promise<void> {
   if (inDrillDown) return;
+
+  if (refreshInFlight) {
+    refreshQueued = true;
+    return;
+  }
+  refreshInFlight = true;
+
   try {
-    const [sessions, history, projects, settings, plugins, mcpIssues, toolStats] =
+    const [sessions, history, projects, settings, plugins, mcpIssues, today] =
       await Promise.all([
         getAllSessions(),
         getRecentHistory(200),
@@ -239,7 +267,7 @@ async function refreshAll(): Promise<void> {
         readSettings(),
         readInstalledPlugins(),
         readMcpAuthIssues(),
-        getTodayToolStats(),
+        getTodayStats(),
       ]);
 
     cachedSessions = sessions;
@@ -250,9 +278,9 @@ async function refreshAll(): Promise<void> {
     updateAgentsPanel(widgets.agents, agents);
     updateHistoryPanel(widgets.history, history.slice(-20));
     updateProjectsPanel(widgets.projects, projects);
-    updatePluginsPanel(widgets.plugins, plugins, mcpIssues, toolStats);
+    updatePluginsPanel(widgets.plugins, plugins, mcpIssues, today.toolStats);
+    updateTokensPanel(widgets.tokens, sessions, today);
 
-    await refreshTokenPanel(sessions, settings.model);
     refreshSystemPanel(sessions);
     updateStatusBar(sessions, settings.model);
 
@@ -261,19 +289,12 @@ async function refreshAll(): Promise<void> {
     // Don't crash on refresh errors
     screen.render();
   } finally {
+    refreshInFlight = false;
     dismissLoading();
-  }
-}
-
-async function refreshTokenPanel(
-  sessions: ActiveSession[],
-  model?: string
-): Promise<void> {
-  try {
-    const todayTokens = await getTodayTokens();
-    updateTokensPanel(widgets.tokens, sessions, todayTokens, model);
-  } catch {
-    // Token panel fails gracefully
+    if (refreshQueued) {
+      refreshQueued = false;
+      scheduleRefresh();
+    }
   }
 }
 
@@ -301,28 +322,22 @@ function updateStatusBar(sessions: ActiveSession[], model?: string): void {
     ? formatDuration(Date.now() - oldest.startedAt)
     : "—";
 
-  const cost = estimateCost(
-    {
-      input_tokens: sessions.reduce((s, x) => s + x.totalTokens.input_tokens, 0),
-      output_tokens: sessions.reduce((s, x) => s + x.totalTokens.output_tokens, 0),
-      cache_creation_input_tokens: sessions.reduce(
-        (s, x) => s + x.totalTokens.cache_creation_input_tokens,
-        0
-      ),
-      cache_read_input_tokens: sessions.reduce(
-        (s, x) => s + x.totalTokens.cache_read_input_tokens,
-        0
-      ),
-    },
-    model
+  // Price each session with the model it actually ran on — the configured model
+  // in settings.json only describes new sessions, not historical ones.
+  const cost = sumCosts(
+    sessions.map((s) => estimateCost(s.totalTokens, s.model))
   );
 
+  // Labels are plain text, not emoji, on purpose. blessed computes emoji as one
+  // cell where the terminal draws two, so every redraw landed a cell to the left
+  // of the last one and the status bar accumulated garbage — "$1955.41" became
+  // "81775.41" within seconds. Single-width glyphs only here.
   const statusText = [
-    `🤖 {yellow-fg}${model?.replace("claude-", "") ?? "?"}{/yellow-fg}`,
-    `⚡ {green-fg}${aliveCount} alive{/green-fg}`,
-    `🪙 {cyan-fg}${formatTokens(totalTokens)}{/cyan-fg}`,
-    `💰 {yellow-fg}${formatCost(cost.total)}{/yellow-fg}`,
-    `⏱  {gray-fg}${uptime}{/gray-fg}`,
+    `{gray-fg}model{/gray-fg} {yellow-fg}${model?.replace("claude-", "") ?? "?"}{/yellow-fg}`,
+    `{green-fg}${aliveCount} alive{/green-fg}`,
+    `{cyan-fg}${formatTokens(totalTokens)}{/cyan-fg} {gray-fg}tok{/gray-fg}`,
+    `{yellow-fg}${formatCost(cost.total, cost.pricingKnown)}{/yellow-fg}`,
+    `{gray-fg}up ${uptime}{/gray-fg}`,
     `{gray-fg}[Tab] [1-7] [r] [?] [q]{/gray-fg}`,
   ].join("  {gray-fg}│{/gray-fg}  ");
 
@@ -421,8 +436,10 @@ function showHelp(): void {
 export function stopApp(): Promise<void> {
   if (refreshTimer) clearInterval(refreshTimer);
   if (systemTimer) clearInterval(systemTimer);
+  if (debounceTimer) clearTimeout(debounceTimer);
   refreshTimer = undefined;
   systemTimer = undefined;
+  debounceTimer = undefined;
   dismissLoading();
   screen?.destroy();
   return fileWatcher.stop();

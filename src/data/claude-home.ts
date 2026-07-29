@@ -1,5 +1,5 @@
-import { readdir } from "node:fs/promises";
-import { basename, sep } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { basename, join, sep } from "node:path";
 import { PATHS } from "../config.js";
 
 /**
@@ -57,4 +57,42 @@ export async function listSessionFiles(
   } catch {
     return [];
   }
+}
+
+export interface SessionFileStat {
+  sessionId: string;
+  path: string;
+  mtimeMs: number;
+}
+
+/**
+ * List a project's session transcripts with their modification times.
+ *
+ * Aggregates scoped to a time window use the mtime to skip files that cannot
+ * contribute, which avoids reading the long tail of old transcripts on every
+ * refresh. A file that fails to stat is omitted rather than assumed current.
+ */
+export async function listSessionFileStats(
+  encodedProject: string
+): Promise<SessionFileStat[]> {
+  const files = await listSessionFiles(encodedProject);
+  const projectDir = join(PATHS.projects, encodedProject);
+
+  const stats = await Promise.all(
+    files.map(async (file) => {
+      const path = join(projectDir, file);
+      try {
+        const info = await stat(path);
+        return {
+          sessionId: file.slice(0, -".jsonl".length),
+          path,
+          mtimeMs: info.mtimeMs,
+        };
+      } catch {
+        return undefined;
+      }
+    })
+  );
+
+  return stats.filter((s): s is SessionFileStat => s !== undefined);
 }

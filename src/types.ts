@@ -111,16 +111,6 @@ export interface ProjectStats {
   totalTokens: TokenUsage;
 }
 
-// ── Token Time Series ────────────────────────────────────────────────────────
-
-export interface TokenBucket {
-  timestamp: number;
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheCreation: number;
-}
-
 // ── System Resources ─────────────────────────────────────────────────────────
 
 export interface ProcessInfo {
@@ -159,4 +149,9 @@ export interface CostEstimate {
   cacheReadCost: number;
   cacheCreationCost: number;
   total: number;
+  /**
+   * False when the model wasn't in the pricing table and a family or default
+   * rate was substituted. The UI marks these so a guess never looks like a fact.
+   */
+  pricingKnown: boolean;
 }

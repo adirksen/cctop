@@ -1,9 +1,9 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { PATHS } from "../config.js";
-import type { AgentInfo, AgentMeta, ConversationEntry } from "../types.js";
+import type { AgentInfo, AgentMeta } from "../types.js";
 import { extractTokenUsage } from "./conversation-reader.js";
-import { parseJsonlChunk } from "../util/jsonl.js";
+import { readJsonlCached } from "./conversation-cache.js";
 
 /** Get the subagents directory for a session. */
 function subagentsDir(encodedProject: string, sessionId: string): string {
@@ -26,7 +26,7 @@ export async function readAgents(
         const agentId = metaFile.replace(".meta.json", "").replace("agent-", "");
         const meta = await readAgentMeta(dir, metaFile);
         const jsonlFile = metaFile.replace(".meta.json", ".jsonl");
-        const entries = await readAgentEntries(dir, jsonlFile);
+        const entries = await readJsonlCached(join(dir, jsonlFile));
 
         return {
           agentId,
@@ -43,26 +43,27 @@ export async function readAgents(
   }
 }
 
+/**
+ * Agent metadata is written once when the subagent spawns, so it is cached by
+ * path and revalidated against mtime rather than re-read every refresh.
+ */
+const metaCache = new Map<string, { meta: AgentMeta; mtimeMs: number }>();
+
 async function readAgentMeta(
   dir: string,
   metaFile: string
 ): Promise<AgentMeta> {
+  const path = join(dir, metaFile);
   try {
-    const content = await readFile(join(dir, metaFile), "utf-8");
-    return JSON.parse(content) as AgentMeta;
+    const { mtimeMs } = await stat(path);
+    const cached = metaCache.get(path);
+    if (cached && cached.mtimeMs === mtimeMs) return cached.meta;
+
+    const content = await readFile(path, "utf-8");
+    const meta = JSON.parse(content) as AgentMeta;
+    metaCache.set(path, { meta, mtimeMs });
+    return meta;
   } catch {
     return { agentType: "unknown", description: "" };
-  }
-}
-
-async function readAgentEntries(
-  dir: string,
-  jsonlFile: string
-): Promise<ConversationEntry[]> {
-  try {
-    const content = await readFile(join(dir, jsonlFile), "utf-8");
-    return parseJsonlChunk<ConversationEntry>(content);
-  } catch {
-    return [];
   }
 }
