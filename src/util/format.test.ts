@@ -118,7 +118,7 @@ describe("formatTime", () => {
   it("uses 24-hour format", () => {
     const timestamp = new Date("2025-01-01T14:30:00Z").getTime();
     const result = formatTime(timestamp);
-    const [hours] = result.split(":");
+    const hours = result.split(":")[0]!;
     expect(parseInt(hours)).toBeGreaterThanOrEqual(0);
     expect(parseInt(hours)).toBeLessThan(24);
   });

@@ -10,6 +10,11 @@ import { join } from "node:path";
 // everything that reads PATHS from it) to re-evaluate against the fake home.
 // Static top-of-file imports of those modules would bind to whatever HOME was
 // set at file-load time, so only dynamic imports are used here.
+//
+// NOTE: This test file's reliance on process.env.HOME mutation and
+// vi.resetModules() assumes vitest's default configuration with `isolate: true`
+// (per-file worker processes). If a future vitest config sets `isolate: false`,
+// this file must be revisited to handle module caching across tests.
 
 const ORIGINAL_HOME = process.env.HOME;
 
@@ -183,6 +188,7 @@ describe("getTodayStats", () => {
       expect(result.cost.total).toBeCloseTo(expectedOpusCost + expectedHaikuCost, 10);
       expect(result.cost.pricingKnown).toBe(true);
 
+      expect(result.toolStats).toHaveLength(2);
       const bash = result.toolStats.find((t) => t.name === "Bash");
       const read = result.toolStats.find((t) => t.name === "Read");
       expect(bash?.calls).toBe(1); // yesterday's Bash call must not be counted

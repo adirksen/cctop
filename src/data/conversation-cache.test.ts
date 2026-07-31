@@ -48,7 +48,7 @@ describe("readJsonlCached", () => {
   });
 
   it("returns an empty array for a missing file without throwing", async () => {
-    const { dir, file } = await makeTempFile();
+    const { dir } = await makeTempFile();
     dirsToClean.push(dir);
     const missing = join(dir, "does-not-exist.jsonl");
 
@@ -103,7 +103,7 @@ describe("readJsonlCached", () => {
     const second = await readJsonlCached(file);
 
     expect(second).toHaveLength(3);
-    expect(second[2].uuid).toBe("c");
+    expect(second[2]!.uuid).toBe("c");
   });
 
   it("never splits a multi-byte UTF-8 character across a partial-line read", async () => {
@@ -140,7 +140,7 @@ describe("readJsonlCached", () => {
     const first = await readJsonlCached(file);
     // The trailing (unterminated, mid-character) line must not be parsed.
     expect(first).toHaveLength(1);
-    expect(first[0].uuid).toBe("a");
+    expect(first[0]!.uuid).toBe("a");
 
     // Append the rest of the emoji line's bytes plus the terminating newline.
     const rest = Buffer.concat([
@@ -153,8 +153,8 @@ describe("readJsonlCached", () => {
 
     const second = await readJsonlCached(file);
     expect(second).toHaveLength(2);
-    expect(second[1].uuid).toBe("b");
-    expect(second[1].slug).toBe("🪙 coin");
+    expect(second[1]!.uuid).toBe("b");
+    expect(second[1]!.slug).toBe("🪙 coin");
   });
 
   it("re-reads fully when the file is truncated and rewritten shorter", async () => {
@@ -170,7 +170,7 @@ describe("readJsonlCached", () => {
     const second = await readJsonlCached(file);
 
     expect(second).toHaveLength(1);
-    expect(second[0].uuid).toBe("z");
+    expect(second[0]!.uuid).toBe("z");
   });
 
   it("re-parses correctly after invalidate, and cachedFileCount reflects removal/re-addition", async () => {
