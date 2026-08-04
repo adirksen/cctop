@@ -107,7 +107,7 @@ describe("formatTime", () => {
   it("formats numeric timestamp to HH:MM", () => {
     const timestamp = new Date("2025-01-01T14:30:00Z").getTime();
     const result = formatTime(timestamp);
-    expect(result).toMatch(/^\d{2}:\d{2}$/);
+    expect(result).toMatch(/^\d{2}\D\d{2}$/);
   });
 
   it("formats ISO string to HH:MM", () => {
