@@ -29,7 +29,11 @@ async function loadTodayAggregator(home: string) {
 }
 
 async function cleanup(home: string): Promise<void> {
-  process.env.HOME = ORIGINAL_HOME;
+  if (ORIGINAL_HOME === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = ORIGINAL_HOME;
+  }
   await rm(home, { recursive: true, force: true });
 }
 
