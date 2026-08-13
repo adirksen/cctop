@@ -19,7 +19,7 @@ import { join } from "node:path";
 const ORIGINAL_HOME = process.env.HOME;
 
 async function makeHome(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "cctop-today-agg-"));
+  return mkdtemp(join(tmpdir(), "claudetui-today-agg-"));
 }
 
 async function loadTodayAggregator(home: string) {

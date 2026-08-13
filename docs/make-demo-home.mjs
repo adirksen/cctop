@@ -22,7 +22,7 @@ const enc = (p) => p.replace(/[:\\/]/g, "-");
 // One session's cwd matches this repo so the actually-running Claude Code
 // process attaches to it and the demo shows a live PID.
 const projects = {
-  cctop: "/Users/johnoakley/code/cctop",
+  claudetui: "/Users/johnoakley/code/claudetui",
   "api-server": "/Users/demo/code/api-server",
   webapp: "/Users/demo/code/webapp",
   "data-pipeline": "/Users/demo/code/data-pipeline",
@@ -30,7 +30,7 @@ const projects = {
 
 // sessions: [project, sessionId, model, startMinAgo, turns, cacheBase, toolMix]
 const sessions = [
-  ["cctop", "aaaa1111-1111-4111-8111-111111111111", "claude-opus-5", 134, 46, 900_000,
+  ["claudetui", "aaaa1111-1111-4111-8111-111111111111", "claude-opus-5", 134, 46, 900_000,
     { Bash: 26, Read: 31, Edit: 14, Write: 6, Grep: 9 }],
   ["api-server", "bbbb2222-2222-4222-8222-222222222222", "claude-sonnet-5", 205, 34, 400_000,
     { Bash: 18, Read: 22, Edit: 11, WebSearch: 3 }],
@@ -122,7 +122,7 @@ for (const [name, sid, model, startMinAgo, turns, cacheBase, toolMix] of session
   writeFileSync(join(dir, `${sid}.jsonl`), lines.join("\n") + "\n");
 
   // Subagents for the live session so the Agents panel has rows.
-  if (name === "cctop") {
+  if (name === "claudetui") {
     const subDir = join(dir, sid, "subagents");
     mkdirSync(subDir, { recursive: true });
     const agents = [

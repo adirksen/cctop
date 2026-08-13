@@ -101,7 +101,7 @@ export function showLoadingOverlay(
       border: { fg: "yellow" },
       label: { fg: "yellow", bold: true },
     },
-    label: " ⚡ cctop ",
+    label: " ⚡ claudetui ",
     content: buildContent(art, SPINNER_FRAMES[0]!, label),
   });
 

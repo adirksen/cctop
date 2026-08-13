@@ -155,13 +155,13 @@ export async function startApp(): Promise<void> {
     try {
       screen = blessed.screen({
         smartCSR: true,
-        title: "cctop — Claude Code Monitor",
+        title: "claudetui — Claude Code Monitor",
         fullUnicode: true,
         warnings: false,
       });
 
       screen.on("error", (err: Error) => {
-        process.stderr.write(`[cctop] screen error: ${err.message}\n`);
+        process.stderr.write(`[claudetui] screen error: ${err.message}\n`);
       });
 
       rebuildLayout();
@@ -216,7 +216,7 @@ export async function startApp(): Promise<void> {
             fileWatcher.on(event, scheduleRefresh);
           }
           fileWatcher.on("watch-error", (err: Error) => {
-            process.stderr.write(`[cctop] watch error: ${err.message}\n`);
+            process.stderr.write(`[claudetui] watch error: ${err.message}\n`);
           });
 
           refreshTimer = setInterval(
@@ -232,7 +232,7 @@ export async function startApp(): Promise<void> {
         } catch (err) {
           dismissLoading();
           process.stderr.write(
-            `[cctop] init error: ${err instanceof Error ? err.message : String(err)}\n`
+            `[claudetui] init error: ${err instanceof Error ? err.message : String(err)}\n`
           );
           screen.render();
         }
@@ -406,10 +406,10 @@ function showHelp(): void {
       border: { fg: COLORS.top.accent },
       label: { fg: COLORS.top.accent, bold: true },
     },
-    label: " cctop Help ",
+    label: " claudetui Help ",
     content: [
       "",
-      "  {bold}cctop{/bold} — Claude Code Monitor",
+      "  {bold}claudetui{/bold} — Claude Code Monitor",
       "",
       "  {yellow-fg}Tab / Shift+Tab{/yellow-fg}   Cycle panels",
       "  {yellow-fg}1 – 7{/yellow-fg}             Jump to panel",

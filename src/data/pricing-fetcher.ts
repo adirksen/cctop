@@ -9,7 +9,7 @@ export const LITELLM_PRICING_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 
 /** On-disk location for the cached, parsed pricing table. */
-export const PRICING_CACHE_PATH = join(homedir(), ".cache", "cctop", "pricing.json");
+export const PRICING_CACHE_PATH = join(homedir(), ".cache", "claudetui", "pricing.json");
 
 /** How long a cached pricing table is considered fresh. */
 export const PRICING_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -75,7 +75,7 @@ function isValidPerMillion(value: unknown): value is number {
 }
 
 /**
- * Parse LiteLLM's community pricing catalog into cctop's ModelPricing table,
+ * Parse LiteLLM's community pricing catalog into claudetui's ModelPricing table,
  * keeping only Anthropic-provider rows with sane, finite costs. Any row that
  * fails validation is skipped silently — one bad row never rejects the whole
  * catalog.

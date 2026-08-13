@@ -9,7 +9,7 @@ process.on("uncaughtException", (err) => {
   } catch {
     // Screen may already be destroyed
   }
-  console.error("cctop crashed:", err);
+  console.error("claudetui crashed:", err);
   process.exit(1);
 });
 
@@ -19,7 +19,7 @@ process.on("unhandledRejection", (err) => {
   } catch {
     // Screen may already be destroyed
   }
-  console.error("cctop unhandled rejection:", err);
+  console.error("claudetui unhandled rejection:", err);
   process.exit(1);
 });
 
@@ -28,6 +28,6 @@ process.on("unhandledRejection", (err) => {
 try {
   await startApp();
 } catch (err) {
-  console.error("Failed to start cctop:", err);
+  console.error("Failed to start claudetui:", err);
   process.exit(1);
 }

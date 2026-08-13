@@ -10,7 +10,7 @@ import {
 
 // Each test gets its own temp dir + file path since the cache is module-global.
 async function makeTempFile(): Promise<{ dir: string; file: string }> {
-  const dir = await mkdtemp(join(tmpdir(), "cctop-cache-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "claudetui-cache-test-"));
   const file = join(dir, "transcript.jsonl");
   return { dir, file };
 }

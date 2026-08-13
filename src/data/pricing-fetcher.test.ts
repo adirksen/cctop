@@ -44,7 +44,7 @@ afterEach(async () => {
 });
 
 async function makeTempCachePath(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "cctop-pricing-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "claudetui-pricing-test-"));
   dirsToClean.push(dir);
   return join(dir, "pricing.json");
 }
