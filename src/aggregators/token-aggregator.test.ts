@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   emptyUsage,
   addUsage,
@@ -6,7 +6,14 @@ import {
   estimateCost,
   sumCosts,
 } from "./token-aggregator.js";
-import { DEFAULT_PRICING, MODEL_PRICING, FAMILY_PRICING } from "../config.js";
+import {
+  getDefaultPricing,
+  getModelPricing,
+  getFamilyPricing,
+  applyPricingOverrides,
+  resetPricingOverrides,
+  pricingFromRates,
+} from "../config.js";
 import type { CostEstimate, TokenUsage } from "../types.js";
 
 describe("emptyUsage", () => {
@@ -65,43 +72,64 @@ describe("addUsage", () => {
 describe("resolvePricing", () => {
   it("returns the exact table entry with known: true", () => {
     const result = resolvePricing("claude-sonnet-5");
-    expect(result.pricing).toBe(MODEL_PRICING["claude-sonnet-5"]);
+    expect(result.pricing).toBe(getModelPricing()["claude-sonnet-5"]);
     expect(result.known).toBe(true);
   });
 
   it("matches a vendor-prefixed id by substring", () => {
     const result = resolvePricing("anthropic.claude-opus-5");
-    expect(result.pricing).toBe(MODEL_PRICING["claude-opus-5"]);
+    expect(result.pricing).toBe(getModelPricing()["claude-opus-5"]);
     expect(result.known).toBe(true);
   });
 
   it("matches a date-suffixed id by substring", () => {
     const result = resolvePricing("claude-sonnet-5-20260101");
-    expect(result.pricing).toBe(MODEL_PRICING["claude-sonnet-5"]);
+    expect(result.pricing).toBe(getModelPricing()["claude-sonnet-5"]);
     expect(result.known).toBe(true);
   });
 
   it("falls back to the opus family rate for an unknown opus model", () => {
     const result = resolvePricing("claude-opus-6-speculative");
-    const opusFamily = FAMILY_PRICING.find(([family]) => family === "opus")![1];
+    const opusFamily = getFamilyPricing().find(([family]) => family === "opus")![1];
     expect(result.pricing).toBe(opusFamily);
     expect(result.known).toBe(false);
   });
 
   it("falls back to the fable family rate, not the sonnet default", () => {
     const result = resolvePricing("claude-fable-6");
-    const fableFamily = FAMILY_PRICING.find(([family]) => family === "fable")![1];
+    const fableFamily = getFamilyPricing().find(([family]) => family === "fable")![1];
     expect(result.pricing).toBe(fableFamily);
-    expect(result.pricing).not.toBe(DEFAULT_PRICING);
+    expect(result.pricing).not.toBe(getDefaultPricing());
     expect(result.known).toBe(false);
   });
 
-  it("falls back to DEFAULT_PRICING for undefined, unknown, or a foreign model id", () => {
+  it("falls back to getDefaultPricing() for undefined, unknown, or a foreign model id", () => {
     for (const model of [undefined, "unknown", "gpt-9"]) {
       const result = resolvePricing(model);
-      expect(result.pricing).toBe(DEFAULT_PRICING);
+      expect(result.pricing).toBe(getDefaultPricing());
       expect(result.known).toBe(false);
     }
+  });
+});
+
+describe("resolvePricing with overrides", () => {
+  afterEach(() => {
+    resetPricingOverrides();
+  });
+
+  it("returns an override with known: true, then falls back to family/default after reset", () => {
+    const override = pricingFromRates(2, 4);
+    applyPricingOverrides({ "claude-nova-7": override });
+
+    const overridden = resolvePricing("claude-nova-7");
+    expect(overridden.pricing).toBe(override);
+    expect(overridden.known).toBe(true);
+
+    resetPricingOverrides();
+
+    const afterReset = resolvePricing("claude-nova-7");
+    expect(afterReset.pricing).toBe(getDefaultPricing());
+    expect(afterReset.known).toBe(false);
   });
 });
 

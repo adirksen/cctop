@@ -22,7 +22,7 @@ const NEWLINE = 0x0a;
  *
  * Transcripts are append-only and can reach tens of megabytes, while a refresh
  * cycle touches every one of them. Re-reading each file per cycle dominated
- * cctop's cost, so entries are cached and validated against (mtime, size):
+ * claudetui's cost, so entries are cached and validated against (mtime, size):
  * unchanged files return immediately, and a grown file parses only the bytes
  * appended since the last read.
  *

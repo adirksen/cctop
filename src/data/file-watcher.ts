@@ -42,7 +42,7 @@ export class ClaudeFileWatcher extends EventEmitter {
     );
 
     // Config files. These may not exist yet, so listen for "add" as well as
-    // "change" — a plugin installed while cctop is running creates the file.
+    // "change" — a plugin installed while claudetui is running creates the file.
     this.watchers.push(
       watch([PATHS.plugins, PATHS.settings, PATHS.mcpAuth], {
         ignoreInitial: true,

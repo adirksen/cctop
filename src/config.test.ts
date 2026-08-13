@@ -1,9 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   MODEL_PRICING,
-  FAMILY_PRICING,
-  DEFAULT_PRICING,
+  pricingFromRates,
+  applyPricingOverrides,
+  getModelPricing,
+  getFamilyPricing,
+  getDefaultPricing,
+  resetPricingOverrides,
 } from "./config.js";
+
+afterEach(() => {
+  resetPricingOverrides();
+});
 
 describe("MODEL_PRICING table invariants", () => {
   for (const [model, rate] of Object.entries(MODEL_PRICING)) {
@@ -51,9 +59,9 @@ describe("pinned flagship rates (regression guard)", () => {
   });
 });
 
-describe("FAMILY_PRICING ordering", () => {
+describe("getFamilyPricing ordering", () => {
   it("puts fable and mythos ahead of opus, and opus ahead of sonnet/haiku", () => {
-    const families = FAMILY_PRICING.map(([family]) => family);
+    const families = getFamilyPricing().map(([family]) => family);
     const fableIndex = families.indexOf("fable");
     const mythosIndex = families.indexOf("mythos");
     const opusIndex = families.indexOf("opus");
@@ -73,8 +81,83 @@ describe("FAMILY_PRICING ordering", () => {
   });
 });
 
-describe("DEFAULT_PRICING", () => {
+describe("getDefaultPricing", () => {
   it("is the Sonnet 5 entry", () => {
-    expect(DEFAULT_PRICING).toBe(MODEL_PRICING["claude-sonnet-5"]);
+    expect(getDefaultPricing()).toBe(getModelPricing()["claude-sonnet-5"]);
+  });
+});
+
+describe("pricingFromRates", () => {
+  it("derives cache read at 0.1x input and cache write at 1.25x input", () => {
+    expect(pricingFromRates(5, 25)).toEqual({
+      inputPerMillion: 5,
+      outputPerMillion: 25,
+      cacheReadPerMillion: 0.5,
+      cacheCreationPerMillion: 6.25,
+    });
+  });
+});
+
+describe("pricing overrides", () => {
+  it("changes what getModelPricing() returns for the overridden key while leaving others baked", () => {
+    applyPricingOverrides({
+      "claude-sonnet-5": pricingFromRates(1, 2),
+    });
+
+    expect(getModelPricing()["claude-sonnet-5"]).toEqual(pricingFromRates(1, 2));
+    expect(getModelPricing()["claude-opus-5"]).toBe(MODEL_PRICING["claude-opus-5"]);
+  });
+
+  it("can introduce a brand-new model key", () => {
+    const novel = pricingFromRates(2, 4);
+    applyPricingOverrides({ "claude-nova-7": novel });
+
+    expect(getModelPricing()["claude-nova-7"]).toBe(novel);
+  });
+
+  it("a second call replaces the first, reverting keys absent from the new call", () => {
+    applyPricingOverrides({
+      "claude-sonnet-5": pricingFromRates(1, 2),
+    });
+    applyPricingOverrides({
+      "claude-opus-5": pricingFromRates(9, 18),
+    });
+
+    expect(getModelPricing()["claude-sonnet-5"]).toBe(MODEL_PRICING["claude-sonnet-5"]);
+    expect(getModelPricing()["claude-opus-5"]).toEqual(pricingFromRates(9, 18));
+  });
+
+  it("getFamilyPricing reflects an overridden anchor", () => {
+    const override = pricingFromRates(9, 18);
+    applyPricingOverrides({ "claude-opus-5": override });
+
+    const opusFamily = getFamilyPricing().find(([family]) => family === "opus")![1];
+    expect(opusFamily).toEqual(override);
+  });
+
+  it("getDefaultPricing reflects an overridden claude-sonnet-5", () => {
+    const override = pricingFromRates(1, 2);
+    applyPricingOverrides({ "claude-sonnet-5": override });
+
+    expect(getDefaultPricing()).toEqual(override);
+  });
+
+  it("resetPricingOverrides restores baked values", () => {
+    applyPricingOverrides({
+      "claude-sonnet-5": pricingFromRates(1, 2),
+    });
+    resetPricingOverrides();
+
+    expect(getModelPricing()["claude-sonnet-5"]).toBe(MODEL_PRICING["claude-sonnet-5"]);
+  });
+
+  it("after reset, getModelPricing() deep-equals MODEL_PRICING", () => {
+    applyPricingOverrides({
+      "claude-sonnet-5": pricingFromRates(1, 2),
+      "claude-nova-7": pricingFromRates(2, 4),
+    });
+    resetPricingOverrides();
+
+    expect(getModelPricing()).toEqual(MODEL_PRICING);
   });
 });

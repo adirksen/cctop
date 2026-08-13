@@ -1,10 +1,10 @@
 {
-  "name": "cctop",
+  "name": "claudetui",
   "version": "0.1.0",
   "description": "Terminal dashboard for monitoring Claude Code sessions, token usage, and agent activity",
   "type": "module",
   "bin": {
-    "cctop": "./dist/cctop.js"
+    "claudetui": "./dist/claudetui.js"
   },
   "files": [
     "dist",
@@ -13,15 +13,15 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/adirksen/cctop.git"
+    "url": "git+https://github.com/adirksen/claudetui.git"
   },
-  "homepage": "https://github.com/adirksen/cctop#readme",
+  "homepage": "https://github.com/adirksen/claudetui#readme",
   "bugs": {
-    "url": "https://github.com/adirksen/cctop/issues"
+    "url": "https://github.com/adirksen/claudetui/issues"
   },
   "scripts": {
-    "dev": "tsx bin/cctop.ts",
-    "build": "esbuild bin/cctop.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cctop.js --external:neo-blessed --external:blessed --external:blessed-contrib --external:term.js --external:pty.js",
+    "dev": "tsx bin/claudetui.ts",
+    "build": "esbuild bin/claudetui.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/claudetui.js --external:neo-blessed --external:blessed --external:blessed-contrib --external:term.js --external:pty.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",

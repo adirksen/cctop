@@ -1,10 +1,10 @@
-# cctop
+# claudetui
 
 **How much did Claude Code cost you today? Which session is burning tokens right now? Which one is stuck?**
 
-cctop answers all three at a glance, live, in your terminal — inspired by `htop` and `btop`.
+claudetui answers all three at a glance, live, in your terminal — inspired by `htop` and `btop`.
 
-![cctop dashboard: live sessions, today's token spend, sub-agents, command history, and per-tool costs — then drilling into a session's full cost breakdown](docs/demo.gif)
+![claudetui dashboard: live sessions, today's token spend, sub-agents, command history, and per-tool costs — then drilling into a session's full cost breakdown](docs/demo.gif)
 
 *Recorded against a synthetic `~/.claude` (see `docs/make-demo-home.mjs`) — no real conversations were harmed.*
 
@@ -12,7 +12,7 @@ cctop answers all three at a glance, live, in your terminal — inspired by `hto
 
 Claude Code tells you what it's doing right now, in one terminal. It doesn't tell you what
 *all* of your sessions are doing, what they've cost, or which tools are quietly eating your
-context window. That information is sitting in `~/.claude/` — cctop just shows it to you.
+context window. That information is sitting in `~/.claude/` — claudetui just shows it to you.
 
 **Running more than one session at a time?** That's when a dashboard stops being a curiosity
 and starts being mission control: which of your five sessions is still working, which
@@ -22,11 +22,11 @@ sub-agent has been running for twenty minutes, what last night's autonomous run 
 way to see what your subscription is doing for you, and which projects are getting the most
 out of it.
 
-**Paying per token?** The numbers are real. cctop prices every session with the model that
+**Paying per token?** The numbers are real. claudetui prices every session with the model that
 session actually ran on, using current published rates.
 
-> **cctop vs. `ccusage` and friends:** those tools produce retrospective cost reports, and do
-> it well. cctop is a live process monitor that happens to know about costs — running
+> **claudetui vs. `ccusage` and friends:** those tools produce retrospective cost reports, and do
+> it well. claudetui is a live process monitor that happens to know about costs — running
 > processes, active sub-agents, system load, and spend on one screen that updates as you work.
 
 ## What each panel tells you
@@ -39,7 +39,7 @@ session actually ran on, using current published rates.
 | **History** | What you've asked for recently across every project — press `Enter` for the full session |
 | **Projects** | Where your Claude Code time actually goes |
 | **Plugins & MCP** | Installed plugins, MCP servers needing re-auth, and **which tools eat your context window** |
-| **System** | CPU, memory, and what cctop itself is costing you in RAM |
+| **System** | CPU, memory, and what claudetui itself is costing you in RAM |
 
 The Plugins panel is the one people find most immediately actionable: it ranks today's tool
 calls by estimated token cost, so when `bash` results turn out to be 40% of your input tokens,
@@ -51,8 +51,8 @@ history, token breakdown by type, and the sub-agents it spawned.
 ## Install
 
 ```bash
-git clone https://github.com/adirksen/cctop.git
-cd cctop
+git clone https://github.com/adirksen/claudetui.git
+cd claudetui
 npm install
 npm run dev          # run directly, no build step
 ```
@@ -61,17 +61,17 @@ To build a standalone bundle and put it on your `PATH`:
 
 ```bash
 npm run build
-npm link             # then run `cctop` from anywhere
+npm link             # then run `claudetui` from anywhere
 ```
 
-> **Not on npm yet.** The name `cctop` is taken by an unrelated package, so
-> `npx cctop` installs someone else's tool — don't. Install from source until a
+> **Not on npm yet.** The name `claudetui` is taken by an unrelated package, so
+> `npx claudetui` installs someone else's tool — don't. Install from source until a
 > published name is settled.
 
 ### Requirements
 
 - Node.js 20+
-- [Claude Code](https://claude.ai/code) installed and used at least once (cctop reads `~/.claude/`)
+- [Claude Code](https://claude.ai/code) installed and used at least once (claudetui reads `~/.claude/`)
 - macOS, Linux, or Windows
 
 ## Keybindings
@@ -90,7 +90,7 @@ Within drill-down views, `j` / `k` or arrow keys scroll content.
 
 ## Privacy
 
-**cctop makes no network calls and sends no telemetry.** It reads local files under
+**claudetui makes no network calls and sends no telemetry.** It reads local files under
 `~/.claude/` and nothing else. Your conversations never leave your machine.
 
 The only external commands it runs are for process discovery: `pgrep` and `lsof` on
@@ -109,7 +109,7 @@ macOS/Linux, `tasklist` on Windows.
 ## How the numbers are calculated
 
 **Token counts are exact.** They come from the `usage` field Claude Code records for every
-assistant turn — cctop does not estimate them.
+assistant turn — claudetui does not estimate them.
 
 **Costs** are those token counts multiplied by [Anthropic's published
 pricing](https://www.anthropic.com/pricing), using the model recorded in each session's own
@@ -120,7 +120,7 @@ Sonnet. Cache reads bill at 0.1× the input rate and cache writes at 1.25×, mat
 Per-session cost is **cumulative API cost**: every turn resends the whole conversation, so
 long sessions compound — that's real spend, not double-counting.
 
-A cost shown as `~$1.24` means the model wasn't in cctop's pricing table and a rate from the
+A cost shown as `~$1.24` means the model wasn't in claudetui's pricing table and a rate from the
 same model family was substituted. A cost without the `~` is list price × exact token count.
 If you're on a subscription plan, treat every figure as API-equivalent value rather than a bill.
 
@@ -128,10 +128,16 @@ If you're on a subscription plan, treat every figure as API-equivalent value rat
 data of their own, so their input cost is derived from result size (characters ÷ 4 ≈ tokens).
 Read them as a ranking of which tools are expensive, not as an exact number.
 
+**Pricing stays current automatically.** At startup, claudetui fetches current rates from
+[LiteLLM's community pricing catalog](https://github.com/BerriAI/litellm) and layers them over
+the built-in table, caching the result on disk for 24 hours under `~/.cache/claudetui/`. If the
+fetch fails or you're offline, claudetui uses a fresh disk cache when available and otherwise
+falls back to built-in rates — costs are never blocked on network access.
+
 ## Architecture
 
 ```
-bin/cctop.ts          Entrypoint — starts the TUI app
+bin/claudetui.ts          Entrypoint — starts the TUI app
 src/
   app.ts              Main loop: layout, keybindings, refresh cycle, drill-down routing
   config.ts           Paths, intervals, model pricing table
@@ -158,7 +164,7 @@ steady-state refresh costs about 25 ms.
 
 - **Tool cost attribution is an estimate** (result size ÷ 4), not an exact token count.
 - **Session liveness needs `lsof`.** Sessions are matched to processes by working directory.
-  Where that's unavailable — Windows, or a restricted `lsof` — cctop shows no PID rather than
+  Where that's unavailable — Windows, or a restricted `lsof` — claudetui shows no PID rather than
   a possibly-wrong one, and falls back to marking recently-active sessions as live.
 - **Two sessions in the same directory** are matched to that directory's processes by
   recency, which can transpose them.
