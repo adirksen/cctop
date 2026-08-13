@@ -192,4 +192,24 @@ describe("sumCosts", () => {
     const result = sumCosts([known, unknown]);
     expect(result.pricingKnown).toBe(false);
   });
+
+  it("ignores unknown pricing on an estimate that contributed no cost", () => {
+    // Claude Code writes "<synthetic>" error placeholders with all-zero usage;
+    // a $0 contribution must not mark the whole aggregate as estimated.
+    const real = estimateCost(
+      {
+        input_tokens: 1_000_000,
+        output_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
+      "claude-opus-5"
+    );
+    const synthetic = estimateCost(emptyUsage(), "<synthetic>");
+    expect(synthetic.pricingKnown).toBe(false);
+
+    const result = sumCosts([real, synthetic]);
+    expect(result.pricingKnown).toBe(true);
+    expect(result.total).toBeCloseTo(5);
+  });
 });

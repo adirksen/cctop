@@ -244,6 +244,50 @@ describe("accumulateToolStats", () => {
     expect(stats.get("Bash")?.pricingKnown).toBe(false);
   });
 
+  it("does not taint pricingKnown for a zero-token call from an unpriced model", () => {
+    // "<synthetic>" placeholder entries carry all-zero usage; contributing
+    // nothing must not flag the tool's cost as an estimate.
+    const stats: ToolStatAccumulator = new Map();
+    const entries = [
+      assistantEntry({
+        timestamp: "2026-01-01T10:00:00.000Z",
+        model: "claude-opus-5",
+        outputTokens: 100,
+        toolUses: [{ id: "call-1", name: "Bash" }],
+      }),
+      assistantEntry({
+        timestamp: "2026-01-01T10:01:00.000Z",
+        model: "<synthetic>",
+        outputTokens: 0,
+        toolUses: [{ id: "call-2", name: "Bash" }],
+      }),
+    ];
+
+    accumulateToolStats(entries, startTs, stats);
+
+    expect(stats.get("Bash")?.calls).toBe(2);
+    expect(stats.get("Bash")?.pricingKnown).toBe(true);
+  });
+
+  it("still taints pricingKnown when an unpriced model contributes result tokens", () => {
+    const stats: ToolStatAccumulator = new Map();
+    const entries = [
+      assistantEntry({
+        timestamp: "2026-01-01T10:00:00.000Z",
+        model: "totally-unknown-model",
+        outputTokens: 0,
+        toolUses: [{ id: "call-1", name: "Bash" }],
+      }),
+      userResultEntry("2026-01-01T10:00:01.000Z", [
+        { toolUseId: "call-1", content: "x".repeat(400) },
+      ]),
+    ];
+
+    accumulateToolStats(entries, startTs, stats);
+
+    expect(stats.get("Bash")?.pricingKnown).toBe(false);
+  });
+
   it("merges call counts across multiple accumulate calls into the same map", () => {
     const stats: ToolStatAccumulator = new Map();
     const sessionA = [
