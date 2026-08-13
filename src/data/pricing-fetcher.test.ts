@@ -8,6 +8,7 @@ import {
   readPricingCache,
   writePricingCache,
   fetchPricingCatalog,
+  initLivePricing,
   PRICING_CACHE_TTL_MS,
   LITELLM_PRICING_URL,
 } from "./pricing-fetcher.js";
@@ -171,6 +172,39 @@ describe("parseLiteLLMCatalog", () => {
     expect(parseLiteLLMCatalog("a string")).toEqual({});
     expect(parseLiteLLMCatalog(42)).toEqual({});
   });
+
+  it("ignores a __proto__ catalog key instead of corrupting the result object's prototype", () => {
+    // A computed key bypasses the object-literal `__proto__` special case,
+    // producing a real own property literally named "__proto__" — exactly
+    // what `JSON.parse` on upstream JSON would hand back. A naive
+    // `result[modelId] = value` write would then hit the Object.prototype
+    // __proto__ setter and silently reparent the local `result` object.
+    const catalog = JSON.parse(
+      JSON.stringify({
+        ["__proto__"]: {
+          litellm_provider: "anthropic",
+          input_cost_per_token: 5e-6,
+          output_cost_per_token: 2.5e-5,
+        },
+        "claude-safe": {
+          litellm_provider: "anthropic",
+          input_cost_per_token: 1e-6,
+          output_cost_per_token: 5e-6,
+        },
+      })
+    ) as unknown;
+
+    const result = parseLiteLLMCatalog(catalog);
+
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(result, "__proto__")).toBe(false);
+    expect(result["claude-safe"]).toEqual({
+      inputPerMillion: 1,
+      outputPerMillion: 5,
+      cacheReadPerMillion: 0.1,
+      cacheCreationPerMillion: 1.25,
+    });
+  });
 });
 
 describe("cache round-trip", () => {
@@ -256,6 +290,58 @@ describe("cache round-trip", () => {
 
     expect(result).not.toBeNull();
     expect(Object.keys(result!.pricing)).toEqual(["good-model"]);
+  });
+
+  it("ignores a __proto__ key in the cached pricing table instead of corrupting its prototype", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = await makeTempCachePath();
+    const raw = JSON.stringify({
+      fetchedAt: Date.now(),
+      pricing: {
+        ["__proto__"]: {
+          inputPerMillion: 5,
+          outputPerMillion: 25,
+          cacheReadPerMillion: 0.5,
+          cacheCreationPerMillion: 6.25,
+        },
+        "good-model": {
+          inputPerMillion: 5,
+          outputPerMillion: 25,
+          cacheReadPerMillion: 0.5,
+          cacheCreationPerMillion: 6.25,
+        },
+      },
+    });
+    await writeFile(path, raw);
+
+    const result = await readPricingCache(path);
+
+    expect(result).not.toBeNull();
+    expect(Object.getPrototypeOf(result!.pricing)).toBe(Object.prototype);
+    expect(Object.keys(result!.pricing)).toEqual(["good-model"]);
+  });
+
+  it("rejects an array-valued pricing field instead of keying entries by numeric index", async () => {
+    const { writeFile } = await import("node:fs/promises");
+    const path = await makeTempCachePath();
+    await writeFile(
+      path,
+      JSON.stringify({
+        fetchedAt: Date.now(),
+        pricing: [
+          {
+            inputPerMillion: 5,
+            outputPerMillion: 25,
+            cacheReadPerMillion: 0.5,
+            cacheCreationPerMillion: 6.25,
+          },
+        ],
+      })
+    );
+
+    const result = await readPricingCache(path);
+
+    expect(result).toBeNull();
   });
 
   it("returns null when fetchedAt is not finite", async () => {
@@ -387,5 +473,110 @@ describe("fetchPricingCatalog", () => {
     const result = await fetchPricingCatalog();
 
     expect(result).toBeNull();
+  });
+});
+
+describe("initLivePricing", () => {
+  it("applies fresh cached pricing before the fetch resolves", async () => {
+    const path = await makeTempCachePath();
+    const now = 1_000_000;
+    const cachedPricing = parseLiteLLMCatalog(FIXTURE_CATALOG);
+    await writePricingCache(cachedPricing, now - 1_000, path);
+
+    let resolveFetch: ((value: unknown) => void) | undefined;
+    const fetchPromise = new Promise((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(fetchPromise));
+
+    const apply = vi.fn();
+
+    await initLivePricing({ apply, cachePath: path, now: () => now });
+
+    // The cache step must have applied synchronously, without waiting on
+    // the still-unresolved fetch.
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(cachedPricing);
+
+    // Let the background fetch settle harmlessly before the test ends.
+    resolveFetch?.({ ok: false, status: 500, json: async () => ({}) });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it("does not apply a stale cache", async () => {
+    const path = await makeTempCachePath();
+    const now = 1_000_000;
+    const cachedPricing = parseLiteLLMCatalog(FIXTURE_CATALOG);
+    await writePricingCache(cachedPricing, now - PRICING_CACHE_TTL_MS - 1, path);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    );
+
+    const apply = vi.fn();
+
+    await initLivePricing({ apply, cachePath: path, now: () => now });
+
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("applies the live table, writes the cache, and fires onLiveUpdate once on a successful fetch", async () => {
+    const path = await makeTempCachePath(); // no cache on disk
+    const now = 2_000_000;
+    const livePricing = parseLiteLLMCatalog(FIXTURE_CATALOG);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => FIXTURE_CATALOG,
+      })
+    );
+
+    const apply = vi.fn();
+    const onLiveUpdate = vi.fn();
+
+    await initLivePricing({ apply, onLiveUpdate, cachePath: path, now: () => now });
+
+    await vi.waitFor(() => {
+      expect(onLiveUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(livePricing);
+
+    const cached = await readPricingCache(path);
+    expect(cached).not.toBeNull();
+    expect(cached?.fetchedAt).toBe(now);
+    expect(cached?.pricing).toEqual(livePricing);
+  });
+
+  it("silently ignores a fetch failure: no throw, no onLiveUpdate, apply not called from the fetch step", async () => {
+    const path = await makeTempCachePath(); // no cache on disk
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+    const apply = vi.fn();
+    const onLiveUpdate = vi.fn();
+
+    await expect(
+      initLivePricing({ apply, onLiveUpdate, cachePath: path, now: () => 3_000_000 })
+    ).resolves.toBeUndefined();
+
+    // Give the backgrounded fetch chain a chance to run to completion.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(apply).not.toHaveBeenCalled();
+    expect(onLiveUpdate).not.toHaveBeenCalled();
+  });
+
+  it("resolves even when both the cache read and the fetch fail", async () => {
+    const path = await makeTempCachePath(); // path never written -> missing cache
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+    await expect(
+      initLivePricing({ apply: vi.fn(), cachePath: path, now: () => 4_000_000 })
+    ).resolves.toBeUndefined();
   });
 });

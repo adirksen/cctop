@@ -2,7 +2,7 @@ import blessed from "blessed";
 import { createDashboard, type DashboardWidgets } from "./ui/layout.js";
 import { setupKeybindings } from "./ui/keybindings.js";
 import { COLORS, PANEL_BORDER_COLORS, TABLE_PANEL_INDICES } from "./ui/theme.js";
-import { INTERVALS } from "./config.js";
+import { INTERVALS, applyPricingOverrides } from "./config.js";
 import { showLoadingOverlay } from "./ui/loading-overlay.js";
 
 // Data aggregators
@@ -16,6 +16,7 @@ import { readInstalledPlugins } from "./data/plugin-reader.js";
 import { readMcpAuthIssues } from "./data/mcp-reader.js";
 import { getSystemStats } from "./data/process-monitor.js";
 import { readConversation } from "./data/conversation-reader.js";
+import { initLivePricing } from "./data/pricing-fetcher.js";
 
 // Panel updaters
 import { updateSessionsPanel } from "./ui/panels/sessions-panel.js";
@@ -198,6 +199,10 @@ export async function startApp(): Promise<void> {
       void (async () => {
         try {
           showLoading("Starting up...");
+          await initLivePricing({
+            apply: applyPricingOverrides,
+            onLiveUpdate: () => void refreshAll(),
+          });
           await refreshAll();
 
           await fileWatcher.start();

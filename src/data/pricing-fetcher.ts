@@ -26,6 +26,15 @@ const CACHE_WRITE_MULTIPLIER = 1.25;
 /** Round to 4 decimal places, same as config.ts's local rounding helper. */
 const round = (n: number): number => Math.round(n * 10_000) / 10_000;
 
+/**
+ * Keys that must never be written via `obj[key] = value` on a plain object —
+ * doing so hits the inherited `__proto__` accessor (or shadows `constructor`
+ * / `prototype`) instead of creating an own property, silently corrupting
+ * the object. Catalog and cache keys come from upstream/on-disk JSON, so
+ * they're skipped outright rather than trusted.
+ */
+const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 interface LiteLLMRow {
   litellm_provider?: unknown;
   input_cost_per_token?: unknown;
@@ -77,6 +86,7 @@ export function parseLiteLLMCatalog(json: unknown): Record<string, ModelPricing>
   }
 
   for (const [modelId, rawRow] of Object.entries(json as Record<string, unknown>)) {
+    if (DANGEROUS_KEYS.has(modelId)) continue;
     if (typeof rawRow !== "object" || rawRow === null) continue;
     const row = rawRow as LiteLLMRow;
 
@@ -157,10 +167,17 @@ export async function readPricingCache(
 
   if (typeof parsed !== "object" || parsed === null) return null;
   if (!Number.isFinite(parsed.fetchedAt)) return null;
-  if (typeof parsed.pricing !== "object" || parsed.pricing === null) return null;
+  if (
+    typeof parsed.pricing !== "object" ||
+    parsed.pricing === null ||
+    Array.isArray(parsed.pricing)
+  ) {
+    return null;
+  }
 
   const pricing: Record<string, ModelPricing> = {};
   for (const [modelId, entry] of Object.entries(parsed.pricing)) {
+    if (DANGEROUS_KEYS.has(modelId)) continue;
     if (typeof entry !== "object" || entry === null) continue;
     const p = entry as ModelPricing;
     if (
@@ -230,4 +247,57 @@ export async function fetchPricingCatalog(
   if (Object.keys(pricing).length === 0) return null;
 
   return pricing;
+}
+
+/** Options for {@link initLivePricing}. */
+export interface InitLivePricingOptions {
+  /** Apply an overrides table on top of the baked-in pricing. */
+  apply: (overrides: Record<string, ModelPricing>) => void;
+  /** Fired once, after a successful background fetch has been applied. */
+  onLiveUpdate?: () => void;
+  cachePath?: string;
+  url?: string;
+  now?: () => number;
+}
+
+/**
+ * Wire live pricing into app startup. Applies a fresh on-disk cache
+ * synchronously (if present), then kicks off a background network fetch
+ * without waiting for it. A stale or invalid cache is ignored, leaving the
+ * baked-in table in effect until the fetch (if any) completes.
+ *
+ * Never rejects: cache and fetch failures are both silent, since a pricing
+ * hiccup should never be visible in the TUI or block startup.
+ */
+export async function initLivePricing(opts: InitLivePricingOptions): Promise<void> {
+  const {
+    apply,
+    onLiveUpdate,
+    cachePath = PRICING_CACHE_PATH,
+    url = LITELLM_PRICING_URL,
+    now = Date.now,
+  } = opts;
+
+  try {
+    const cached = await readPricingCache(cachePath);
+    if (cached !== null && isCacheFresh(cached.fetchedAt, now())) {
+      apply(cached.pricing);
+    }
+  } catch {
+    // best-effort; the baked-in table remains in effect
+  }
+
+  // Fire-and-forget: startup must never block on the network.
+  void (async () => {
+    try {
+      const result = await fetchPricingCatalog(url);
+      if (result !== null) {
+        apply(result);
+        await writePricingCache(result, now(), cachePath);
+        onLiveUpdate?.();
+      }
+    } catch {
+      // silent — the TUI never sees background fetch failures
+    }
+  })();
 }
