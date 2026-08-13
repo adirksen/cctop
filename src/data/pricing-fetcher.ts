@@ -62,7 +62,8 @@ function cachePerMillionInBounds(perToken: unknown): number | null {
   if (!isFiniteNumber(perToken)) return null;
   const perMillion = perToken * 1_000_000;
   if (perMillion <= 0 || perMillion > MAX_PER_MILLION) return null;
-  return round(perMillion);
+  const rounded = round(perMillion);
+  return rounded > 0 ? rounded : null;
 }
 
 /** Like perMillionInBounds, but for an already-converted per-million value
