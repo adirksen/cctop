@@ -45,7 +45,13 @@ export function estimateCost(
   };
 }
 
-/** Sum several already-computed estimates, preserving the confidence flag. */
+/**
+ * Sum several already-computed estimates, preserving the confidence flag.
+ *
+ * An unknown-priced estimate only taints the total when it contributed cost:
+ * Claude Code writes "<synthetic>" error placeholders with all-zero usage, and
+ * a $0 contribution shouldn't downgrade the whole aggregate to an estimate.
+ */
 export function sumCosts(estimates: CostEstimate[]): CostEstimate {
   const total: CostEstimate = {
     inputCost: 0,
@@ -62,7 +68,7 @@ export function sumCosts(estimates: CostEstimate[]): CostEstimate {
     total.cacheReadCost += e.cacheReadCost;
     total.cacheCreationCost += e.cacheCreationCost;
     total.total += e.total;
-    if (!e.pricingKnown) total.pricingKnown = false;
+    if (!e.pricingKnown && e.total > 0) total.pricingKnown = false;
   }
 
   return total;

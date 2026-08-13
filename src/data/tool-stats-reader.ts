@@ -76,7 +76,9 @@ export function accumulateToolStats(
       s.outputTokens += outputPerCall;
       s.estimatedCost +=
         (outputPerCall / 1_000_000) * pricing.outputPerMillion;
-      if (!known) s.pricingKnown = false;
+      // Zero-token calls (e.g. "<synthetic>" placeholders) contribute no cost,
+      // so an unknown price on them shouldn't flag the stat as estimated.
+      if (!known && outputPerCall > 0) s.pricingKnown = false;
     }
 
     // Tool results arrive in the immediately following user message.
@@ -97,6 +99,7 @@ export function accumulateToolStats(
       const s = statFor(stats, toolName);
       s.resultTokens += tokens;
       s.estimatedCost += (tokens / 1_000_000) * pricing.inputPerMillion;
+      if (!known && tokens > 0) s.pricingKnown = false;
     }
   }
 }
