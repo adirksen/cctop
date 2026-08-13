@@ -1,4 +1,4 @@
-# cctop — project conventions
+# claudetui — project conventions
 
 This file captures project-specific instructions that the assistant should
 follow on every change in this repo. It is loaded into Claude Code's context
@@ -45,7 +45,7 @@ pass. No production code without a failing test first.
 
 ## Keep the README current
 
-The README is cctop's user guide. **When a change alters the visible UI,
+The README is claudetui's user guide. **When a change alters the visible UI,
 update the matching README section in the same PR.**
 
 ### What counts as UI-visible
@@ -70,7 +70,7 @@ update the matching README section in the same PR.**
 
 ## Tracking work
 
-cctop slices tracked work in the same strict four-level hierarchy as its
+claudetui slices tracked work in the same strict four-level hierarchy as its
 sibling projects. Use this vocabulary when classifying, planning, or
 referencing any body of work.
 
@@ -105,7 +105,7 @@ A plan that omits these forces the user to redo the sequencing work.
 
 - **Package manager:** npm; single package, no workspaces. Node >= 20.
 - **Stack:** TypeScript (ESM, strict), blessed / blessed-contrib TUI.
-  Entrypoint `bin/cctop.ts`; bundled with esbuild via `npm run build`.
+  Entrypoint in `bin/`; bundled with esbuild via `npm run build`.
 - **Layout:** `src/data/` (raw readers), `src/aggregators/` (derived
   stats), `src/ui/` (layout, panels, views, keybindings), `src/util/`
   (parsing/formatting helpers). Model pricing lives in `src/config.ts`.
