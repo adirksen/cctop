@@ -52,7 +52,10 @@ export function pricingFromRates(
  *
  * Note: Sonnet 5 carries promotional pricing of $2/$10 through 2026-08-31.
  * The standard $3/$15 rate is used here so estimates stay correct after the
- * promotion ends rather than silently drifting on that date.
+ * promotion ends rather than silently drifting on that date. This table is
+ * only the baked-in floor, though: the live pricing fetch (pricing-fetcher.ts)
+ * overrides it at runtime, so promo rates apply for as long as the catalog
+ * carries them.
  */
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   // Mythos class

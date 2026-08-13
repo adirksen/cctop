@@ -12,6 +12,8 @@ import {
   PRICING_CACHE_TTL_MS,
   LITELLM_PRICING_URL,
 } from "./pricing-fetcher.js";
+import { applyPricingOverrides, resetPricingOverrides } from "../config.js";
+import { resolvePricing } from "../aggregators/token-aggregator.js";
 
 // Real catalog rows verified against the live LiteLLM catalog (2026-08-12).
 const FIXTURE_CATALOG = {
@@ -578,5 +580,46 @@ describe("initLivePricing", () => {
     await expect(
       initLivePricing({ apply: vi.fn(), cachePath: path, now: () => 4_000_000 })
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("integration: initLivePricing -> applyPricingOverrides -> resolvePricing", () => {
+  afterEach(resetPricingOverrides);
+
+  it("applies a cached live-promo rate through the real override store, resolved by exact and dated model id", async () => {
+    const path = await makeTempCachePath();
+    const now = 5_000_000;
+    // The live promo rate for claude-sonnet-5, deliberately different from
+    // the baked-in $3/$15 table in config.ts.
+    const promoPricing = {
+      "claude-sonnet-5": {
+        inputPerMillion: 2,
+        outputPerMillion: 10,
+        cacheReadPerMillion: 0.2,
+        cacheCreationPerMillion: 2.5,
+      },
+    };
+    await writePricingCache(promoPricing, now - 1_000, path);
+
+    // Fetch is stubbed to a promise that never resolves, so only the
+    // synchronous cache-read step can have applied anything by the time
+    // initLivePricing's returned promise settles.
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+
+    await initLivePricing({
+      apply: applyPricingOverrides,
+      cachePath: path,
+      now: () => now,
+    });
+
+    const exact = resolvePricing("claude-sonnet-5");
+    expect(exact.known).toBe(true);
+    expect(exact.pricing.inputPerMillion).toBe(2);
+    expect(exact.pricing.outputPerMillion).toBe(10);
+
+    const dated = resolvePricing("claude-sonnet-5-20260101");
+    expect(dated.known).toBe(true);
+    expect(dated.pricing.inputPerMillion).toBe(2);
+    expect(dated.pricing.outputPerMillion).toBe(10);
   });
 });
