@@ -1,5 +1,9 @@
 import type { CostEstimate, ModelPricing, TokenUsage } from "../types.js";
-import { DEFAULT_PRICING, FAMILY_PRICING, MODEL_PRICING } from "../config.js";
+import {
+  getDefaultPricing,
+  getFamilyPricing,
+  getModelPricing,
+} from "../config.js";
 
 /** A zero-valued usage record. Always returns a fresh object — safe to mutate. */
 export function emptyUsage(): TokenUsage {
@@ -82,19 +86,20 @@ export function resolvePricing(model?: string): {
   known: boolean;
 } {
   if (!model || model === "unknown") {
-    return { pricing: DEFAULT_PRICING, known: false };
+    return { pricing: getDefaultPricing(), known: false };
   }
 
-  const exact = MODEL_PRICING[model];
+  const modelPricing = getModelPricing();
+  const exact = modelPricing[model];
   if (exact) return { pricing: exact, known: true };
 
-  for (const [key, value] of Object.entries(MODEL_PRICING)) {
+  for (const [key, value] of Object.entries(modelPricing)) {
     if (model.includes(key)) return { pricing: value, known: true };
   }
 
-  for (const [family, value] of FAMILY_PRICING) {
+  for (const [family, value] of getFamilyPricing()) {
     if (model.includes(family)) return { pricing: value, known: false };
   }
 
-  return { pricing: DEFAULT_PRICING, known: false };
+  return { pricing: getDefaultPricing(), known: false };
 }
