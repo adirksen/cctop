@@ -131,8 +131,8 @@ Read them as a ranking of which tools are expensive, not as an exact number.
 **Pricing stays current automatically.** At startup, cctop fetches current rates from
 [LiteLLM's community pricing catalog](https://github.com/BerriAI/litellm) and layers them over
 the built-in table, caching the result on disk for 24 hours under `~/.cache/cctop/`. If the
-fetch fails or you're offline, cctop falls back to the built-in table above — costs are never
-blocked on network access.
+fetch fails or you're offline, cctop uses a fresh disk cache when available and otherwise
+falls back to built-in rates — costs are never blocked on network access.
 
 ## Architecture
 
