@@ -90,8 +90,10 @@ Within drill-down views, `j` / `k` or arrow keys scroll content.
 
 ## Privacy
 
-**claudetui makes no network calls and sends no telemetry.** It reads local files under
-`~/.claude/` and nothing else. Your conversations never leave your machine.
+**claudetui sends no telemetry and your conversations never leave your machine.** It reads
+local files under `~/.claude/` and nothing else. Its one network call is an optional
+startup fetch of public model pricing (LiteLLM's community catalog — see "How the numbers
+are calculated"); nothing local is sent, and when offline the built-in table is used.
 
 The only external commands it runs are for process discovery: `pgrep` and `lsof` on
 macOS/Linux, a PowerShell `Get-CimInstance` process query on Windows.
