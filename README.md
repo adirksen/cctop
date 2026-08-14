@@ -94,14 +94,14 @@ Within drill-down views, `j` / `k` or arrow keys scroll content.
 `~/.claude/` and nothing else. Your conversations never leave your machine.
 
 The only external commands it runs are for process discovery: `pgrep` and `lsof` on
-macOS/Linux, `tasklist` on Windows.
+macOS/Linux, a PowerShell `Get-CimInstance` process query on Windows.
 
 | Data | Source |
 |------|--------|
 | Sessions | `~/.claude/history.jsonl` (derived — Claude Code no longer writes session files) |
 | Token usage & messages | `~/.claude/projects/<encoded-path>/<session-id>.jsonl` |
 | Sub-agents | `~/.claude/projects/<encoded-path>/<session-id>/subagents/` |
-| Running Claude processes | `pgrep` + `lsof` (macOS/Linux) / `tasklist` (Windows) |
+| Running Claude processes | `pgrep` + `lsof` (macOS/Linux) / PowerShell `Get-CimInstance` (Windows) |
 | Installed plugins | `~/.claude/plugins/installed_plugins.json` |
 | MCP auth status | `~/.claude/mcp-needs-auth-cache.json` |
 | Settings / model | `~/.claude/settings.json` |
@@ -166,6 +166,12 @@ steady-state refresh costs about 25 ms.
 - **Session liveness needs `lsof`.** Sessions are matched to processes by working directory.
   Where that's unavailable — Windows, or a restricted `lsof` — claudetui shows no PID rather than
   a possibly-wrong one, and falls back to marking recently-active sessions as live.
+- **Windows liveness is heuristic.** Claude Code processes are found by command-line
+  matching (npm installs run under `node.exe`, bun installs under `bun.exe`, the native
+  installer as `claude.exe`; Claude Desktop is excluded), but Windows can't report another
+  process's working directory, so sessions get the recently-active fallback above with no
+  PID column. If you run Claude Code inside WSL, run claudetui inside WSL too — processes
+  and `~/.claude` aren't visible across the WSL/Windows boundary.
 - **Two sessions in the same directory** are matched to that directory's processes by
   recency, which can transpose them.
 - **Very large `history.jsonl` files** (100k+ entries) add a small startup delay.
