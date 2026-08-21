@@ -20,6 +20,9 @@ const MAX_SESSIONS = 25;
 /** Cap on external process-inspection commands. */
 const PROBE_TIMEOUT_MS = 2_000;
 
+/** PowerShell cold-starts in 1-2s, so its probe gets more headroom. */
+const WINDOWS_PROBE_TIMEOUT_MS = 5_000;
+
 export interface ClaudeProcess {
   pid: number;
   /** Working directory, when the platform can report it. */
@@ -61,20 +64,22 @@ export async function findClaudeProcesses(): Promise<ClaudeProcess[]> {
 export async function findClaudePids(): Promise<number[]> {
   try {
     if (isWindows) {
+      // A name filter alone can't find Claude Code here: npm installs run as
+      // node.exe (claude.cmd shims into cli.js) and bun installs as bun.exe,
+      // while claude.exe is also the name of the unrelated Claude Desktop app.
+      // Pull the candidate names with their command lines and let
+      // parseWindowsProcessList decide.
       const { stdout } = await execFileAsync(
-        "tasklist",
-        ["/FI", "IMAGENAME eq claude.exe", "/FO", "CSV", "/NH"],
-        { timeout: PROBE_TIMEOUT_MS }
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Get-CimInstance Win32_Process -Filter \"Name='claude.exe' OR Name='node.exe' OR Name='bun.exe'\" | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress",
+        ],
+        { timeout: WINDOWS_PROBE_TIMEOUT_MS }
       );
-      return stdout
-        .trim()
-        .split("\n")
-        .filter((line) => line.toLowerCase().includes("claude.exe"))
-        .map((line) => {
-          const parts = line.split(",");
-          return parseInt(parts[1]?.replace(/"/g, "").trim() ?? "0", 10);
-        })
-        .filter((pid) => pid > 0);
+      return parseWindowsProcessList(stdout, process.pid);
     }
 
     const { stdout } = await execFileAsync("pgrep", ["-x", "claude"], {
@@ -88,6 +93,61 @@ export async function findClaudePids(): Promise<number[]> {
   } catch {
     return [];
   }
+}
+
+type WindowsProcessRow = {
+  ProcessId?: unknown;
+  Name?: unknown;
+  CommandLine?: unknown;
+};
+
+/**
+ * Pick Claude Code PIDs out of the Windows process-probe JSON.
+ *
+ * A row counts as Claude Code when it is the native-installer claude.exe, or
+ * a node/bun host whose command line contains a claude-code path segment.
+ * Claude Desktop (also named claude.exe, under AnthropicClaude) and its
+ * Electron children (--type= flag) are excluded, as is cctop's own process.
+ *
+ * PowerShell's ConvertTo-Json emits a bare object for a single row and may
+ * prefix a BOM; malformed or empty output yields [] rather than throwing.
+ */
+export function parseWindowsProcessList(
+  stdout: string,
+  selfPid: number
+): number[] {
+  const text = stdout.replace(/^﻿/, "").trim();
+  if (!text) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+
+  const rows: WindowsProcessRow[] = Array.isArray(parsed)
+    ? parsed
+    : [parsed as WindowsProcessRow];
+
+  const pids: number[] = [];
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) continue;
+    const pid = typeof row.ProcessId === "number" ? row.ProcessId : 0;
+    if (pid <= 0 || pid === selfPid) continue;
+
+    const name = typeof row.Name === "string" ? row.Name.toLowerCase() : "";
+    const cmd = typeof row.CommandLine === "string" ? row.CommandLine : "";
+
+    // Claude Desktop and its Electron children are not Claude Code.
+    if (/anthropicclaude/i.test(cmd) || /--type=/.test(cmd)) continue;
+
+    const isNativeCli = name === "claude.exe";
+    const isHostedCli = /[\\/]claude-code[\\/]/i.test(cmd);
+    if (isNativeCli || isHostedCli) pids.push(pid);
+  }
+
+  return pids;
 }
 
 /**
